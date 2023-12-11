@@ -137,7 +137,7 @@ def create_animation_surge(ds, file_name='surge_animation.gif'):
 ################################################################################
 from scipy.ndimage import laplace
 
-storm = 'irma_seas5'
+storm = 'idai_seas5'
 variable = 'tp'
 scenario = 'forecast'
 # Dict of storms
@@ -148,12 +148,12 @@ dict_storms = {
         'sandy_historical':{'lat':slice(52,20), 'lon':slice(-85,-55),'tstart':'2012-10-26','tend':'2012-10-30'},
         'sandy_era5':{'lat':slice(52,20), 'lon':slice(-85,-55),'tstart':'2012-10-26','tend':'2012-10-30'},
         'xaver':{'lat':slice(79.99,40), 'lon':slice(-26,23),'tstart':'2013-12-04','tend':'2013-12-06'},
-        'idai':{'lat':slice(-10,-30), 'lon':slice(20,55),'tstart':'2019-03-10','tend':'2019-03-16'},
+        'idai':{'lat':slice(-10,-30), 'lon':slice(20,55),'tstart':'2019-03-12','tend':'2019-03-15'},
         'irma':{'lat':slice(30,10), 'lon':slice(-90,-60),'tstart':'2017-09-07','tend':'2017-09-14'},
         'andrew':{'lat':slice(30,10), 'lon':slice(-90,-60),'tstart':'1992-08-21','tend':'1992-08-29'},
         }
 
-file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_vars_n15_s90_20170907.nc'
+file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_vars_n15_s90_20190313.nc'
 ds = xr.open_dataset(file_path)
 ds['tp'] = ds['tp']*1000
 # change name tp to Ptot
@@ -177,8 +177,8 @@ grid = ds['Ptot'].sel(number=2).isel(time=-2)
 contour = grid.plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', cmap = 'Blues',robust=True, add_colorbar=True)
 plt.show()
 
-
-create_animation(ds.sel(number=2), variable = 'Ptot', threshold=2, file_name=rf'D:\paper_4\data\Figures\animations\{storm}\{storm}_{scenario}_{variable}_animation.gif')
+for numbers in ds['number']:
+    create_animation(ds.sel(number=numbers.item()), variable = 'Ptot', threshold=2, file_name=rf'D:\paper_4\data\Figures\animations\{storm}\{storm}_{scenario}_{variable}_ens{numbers.item()}_animation.gif')
 
 # plot a timeseries of ds['Ptot'] average across lat and lon
 ds['Ptot'].mean(dim=['lat','lon']).sel(number=1).plot()
