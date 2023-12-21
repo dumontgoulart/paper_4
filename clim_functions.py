@@ -15,28 +15,70 @@ from scipy.ndimage import laplace
 ### FUNCTIONS
 
 def U10m_totalwind(ds):
-    if all(elem in ds.keys() for elem in ['u10m', 'v10m']): 
-        ds['u10m'].attrs['units'] = 'm/s'
-        ds['v10m'].attrs['units'] = 'm/s'
+    if all(elem in ds.keys() for elem in ['u10', 'v10']): 
+        ds['u10'].attrs['units'] = 'm/s'
+        ds['v10'].attrs['units'] = 'm/s'
 
-        ds['U10m'] = np.sqrt(ds['u10m']**2+ds['v10m']**2)
-        ds['U10m'].attrs['standard_name'] = 'total_wind_speed'
-        ds['U10m'].attrs['units'] = 'm/s'
+        ds['U10'] = np.sqrt(ds['u10']**2+ds['v10']**2)
+        ds['U10'].attrs['standard_name'] = 'total_wind_speed'
+        ds['U10'].attrs['units'] = 'm/s'
     else:
         raise ValueError('To calculate the absolute wind speed, it is required the u and v components')
-    
+
+def calculate_wind_direction_xarray(ds, u10_var='u10', v10_var='v10'):
+    """
+    Calculate the wind direction from zonal and meridional wind components.
+    """
+    u10 = ds[u10_var]
+    v10 = ds[v10_var]
+
+    wind_dir_rad = np.arctan2(-u10, -v10)  # Negative to convert from "to" to "from"
+    wind_dir_deg = np.rad2deg(wind_dir_rad)
+    wind_dir_deg = wind_dir_deg.where(wind_dir_deg >= 0, wind_dir_deg + 360)  # Adjust to 0-360 degrees
+
+    return wind_dir_deg
+
+def decompose_wind(ds, U10_var='U10', wind_dir_var='wind_direction'):
+    """
+    Decomposes the total wind speed U10 into its zonal and meridional components (u10 and v10).
+    """
+    U10 = ds[U10_var]
+    wind_dir_deg = ds[wind_dir_var]
+
+    # Convert wind direction from degrees to radians
+    wind_dir_rad = np.deg2rad(wind_dir_deg)
+
+    # Decompose U10 into u10 and v10
+    u10 = -U10 * np.sin(wind_dir_rad)  # Negative because wind blows from this direction
+    v10 = -U10 * np.cos(wind_dir_rad)  # Negative because wind blows from this direction
+
+    return u10, v10
+
+def interpolate_dataframe(df, columns_to_keep, time_col, new_freq):
+    """
+    Interpolates the specified columns of a DataFrame from its current time step to a desired frequency.
+    """
+    # Subset the DataFrame
+    df_subset = df[columns_to_keep]
+    # Set the time column as the index
+    df_subset.set_index(time_col, inplace=True)
+    # Resample to the new frequency and interpolate
+    df_interpolated = df_subset.resample(new_freq).asfreq().interpolate(method='time')
+    return df_interpolated.to_xarray()
+
 def preprocess_era5_dataset(ds, forecast = False, calculate_wind = True):
     # Rename coordinates
-    ds = ds.rename({'latitude': 'lat', 'longitude': 'lon'})
+    if 'latitude' in ds.coords:
+        ds = ds.rename({'latitude': 'lat', 'longitude': 'lon'})
     # Rename variables
-    ds = ds.rename({'tp':'Ptot','msl':'mslp','u10':'u10m','v10':'v10m'})
+    ds = ds.rename({'tp':'tp','msl':'msl','u10':'u10','v10':'v10'})
     # Convert precipitation from m to mm
-    ds['Ptot'] = ds['Ptot']*1000
+    ds['tp'] = ds['tp']*1000
     if forecast == True:
         # Calculate the difference in precipitation between time steps
-        ds['Ptot'] = ds['Ptot'].diff(dim='time', n=1, label='lower')
+        ds['tp'] = ds['tp'].diff(dim='time', n=1, label='lower')
     # Convert mean sea level pressure from Pa to hPa
-    ds['mslp'] = ds['mslp']/100
+    ds['msl'] = ds['msl']/100
     # Adjust longitude coordinates to range from -180 to 180
     ds.coords['lon'] = (ds.coords['lon'] + 180) % 360 - 180
     # Calculate the total wind speed
@@ -45,9 +87,40 @@ def preprocess_era5_dataset(ds, forecast = False, calculate_wind = True):
     
     return ds
 
+def process_ibtracs_storm_data(ibtracs_path, storm_id, ds_time_range):
+    """
+    Loads IBTrACS data, locates a specific storm, and processes the data for wind speed (U10m) and MSLP.
+
+    Parameters:
+    ibtracs_path (str): Path to the IBTrACS dataset.
+    storm_id (str): Unique identifier for the storm.
+    ds_time_range (xarray.DataArray): Time range from an existing dataset to filter the storm data.
+
+    Returns:
+    pandas.DataFrame: DataFrame containing processed storm data with U10m and MSLP.
+    """
+    # Load IBTRACS data
+    ds_ibtracs = xr.open_mfdataset(ibtracs_path)
+
+    # Locate the storm using a provided function `locate_storm`
+    ds_storm, df_storm = locate_storm(ds_ibtracs, storm_id)
+
+    # Process wind and pressure data
+    df_storm['U10'] = df_storm['usa_wind'] * 0.5144444444444444  # Convert knots to m/s
+    df_storm['msl'] = df_storm['usa_pres']
+
+    # Drop the original columns
+    df_storm = df_storm.drop(columns=['usa_wind', 'usa_pres'])
+
+    # Filter based on the time range of the dataset 'ds'
+    df_storm_subset = df_storm[(df_storm['time'] >= ds_time_range.time[0].values) & 
+                               (df_storm['time'] <= ds_time_range.time[-1].values)]
+
+    return df_storm, df_storm_subset
+
 def storm_tracker_mslp_updated(ds, df_ws, smooth_step=None, grid_conformity=False, large_box=6, small_box=3):
     # Calculate the vorticity for all timesteps
-    ds_vorticity = mpcalc.vorticity(u=ds['u10m'], v=ds['v10m'])
+    ds_vorticity = mpcalc.vorticity(u=ds['u10'], v=ds['v10'])
     ds['vorticity'] = ds_vorticity
 
     # Ensure ds and df_ws have the same starting and end date
@@ -82,16 +155,16 @@ def storm_tracker_mslp_updated(ds, df_ws, smooth_step=None, grid_conformity=Fals
             coords_max_vort = ds_box5.where(ds_box5['vorticity'] == ds_box5['vorticity'].min(dim=['lat','lon'])).to_dataframe()['vorticity'].dropna().reset_index(['lat','lon'])
         
         # 2-a) update values if vorticity position indicates lower pressure:
-        if ds_box5['mslp'].sel(lat = coords_max_vort['lat'].values, lon = coords_max_vort['lon'].values, method = 'nearest').values < da_eye_track['mslp'].values:
+        if ds_box5['msl'].sel(lat = coords_max_vort['lat'].values, lon = coords_max_vort['lon'].values, method = 'nearest').values < da_eye_track['msl'].values:
             print('Step 2: update location minimum pressure for vorticity maximum')
             da_eye_track = ds_box5.sel(lat = coords_max_vort['lat'].values, lon = coords_max_vort['lon'].values, method = 'nearest')
 
         # 3) Establish minimum pressure within X degrees from eye of the storm:
         ds_box_small = ds_box.sel(lat = slice(da_eye_track['lat'].values.item() + small_box, da_eye_track['lat'].values.item() - small_box), lon = slice(da_eye_track['lon'].values.item() - small_box, da_eye_track['lon'].values.item() + small_box))
-        coords_minimum_small = ds_box_small.where(ds_box_small['mslp'] == ds_box_small['mslp'].min(dim=['lat','lon'])).to_dataframe()['mslp'].dropna().reset_index(['lat','lon'])
+        coords_minimum_small = ds_box_small.where(ds_box_small['msl'] == ds_box_small['msl'].min(dim=['lat','lon'])).to_dataframe()['msl'].dropna().reset_index(['lat','lon'])
         coords_minimum_small = coords_minimum_small.mean(numeric_only=True).to_frame().T
         # 3-a) update values if new position indicates lower pressure:
-        if ds_box_small['mslp'].sel(lat = coords_minimum_small['lat'].values, lon = coords_minimum_small['lon'].values, method = 'nearest').values <= da_eye_track['mslp'].values:
+        if ds_box_small['msl'].sel(lat = coords_minimum_small['lat'].values, lon = coords_minimum_small['lon'].values, method = 'nearest').values <= da_eye_track['msl'].values:
             # print('Step 3: update location minimum pressure for minimum MSLP')
             da_eye_track = ds_box_small.sel(lat = coords_minimum_small['lat'].values, lon = coords_minimum_small['lon'].values, method = 'nearest')
 
@@ -241,7 +314,7 @@ def plot_cumulative_precipitation_timeseries(ds, lat, lon, ds_era5=None):
     # Convert the selected data to a DataFrame
     df = ds_selected.to_dataframe().reset_index()
     # Calculate the cumulative sum of precipitation
-    df['Ptot_cumulative'] = df.groupby('number')['Ptot'].cumsum()
+    df['Ptot_cumulative'] = df.groupby('number')['tp'].cumsum()
     # Create a figure and an axis
     fig, ax = plt.subplots(figsize=(10, 6))
     # Plot the cumulative time series of precipitation for each number
@@ -254,7 +327,7 @@ def plot_cumulative_precipitation_timeseries(ds, lat, lon, ds_era5=None):
         # Convert the selected data to a DataFrame
         df_era5 = ds_era5_selected.to_dataframe().reset_index()
         # Calculate the cumulative sum of precipitation
-        df_era5['Ptot_cumulative'] = df_era5['Ptot'].cumsum()
+        df_era5['Ptot_cumulative'] = df_era5['tp'].cumsum()
         # Plot the cumulative time series of precipitation for ds_era5
         ax.plot(df_era5['time'], df_era5['Ptot_cumulative'], color='black', linestyle='dashed', linewidth=2.5, label = 'ERA5')
         # add label for era5
@@ -272,8 +345,8 @@ def plot_var_timeseries(ds, lat, lon, variable, ds_era5=None):
     ds_selected = ds.sel(lat=lat, lon=lon, method='nearest')
 
     # Calculate the wind speed
-    if variable == 'U10m':
-        ds_selected['U10m'] = np.sqrt(ds_selected['u10m']**2 + ds_selected['v10m']**2)
+    if variable == 'u10':
+        ds_selected['u10'] = np.sqrt(ds_selected['u10']**2 + ds_selected['v10']**2)
 
     # Convert the selected data to a DataFrame
     df = ds_selected.to_dataframe().reset_index()
@@ -290,8 +363,8 @@ def plot_var_timeseries(ds, lat, lon, variable, ds_era5=None):
         ds_era5_selected = ds_era5.sel(lat=lat, lon=lon, method='nearest')
 
         # Calculate the wind speed
-        if variable == 'U10m': 
-            ds_era5_selected['U10m'] = np.sqrt(ds_era5_selected['u10m']**2 + ds_era5_selected['v10m']**2)
+        if variable == 'u10': 
+            ds_era5_selected['u10'] = np.sqrt(ds_era5_selected['u10']**2 + ds_era5_selected['v10']**2)
 
         # Convert the selected data to a DataFrame
         df_era5 = ds_era5_selected.to_dataframe().reset_index()
@@ -315,109 +388,7 @@ def adjust_time(ds):
     ds = ds.isel(time=slice(0, 6))
 
     return ds
-####   
 
-# load data
-file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_010_vars_n50_s90_20190313.nc' # ecmwf_eps_pf_vars_n15_s90_20190313 / ecmwf_eps_pf_vars_n15_s90_20170907
-ds = xr.open_dataset(file_path).sel(time=slice('2019-03-13','2019-03-15T12:00:00.000000000'))
-ds = preprocess_era5_dataset(ds, forecast=True)
-# load ERA5 data
-ds_era5 = xr.open_dataset(r'D:\paper_4\data\era5\era5_hourly_vars_idai_single_2019_03.nc').sel(time=slice('2019-03-13','2019-03-15T12:00:00.000000000'))
-ds_era5 = preprocess_era5_dataset(ds_era5)
-#load control run
-ds_control = xr.open_dataset(r'D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s90_20190313_00.nc').sel(time=slice('2019-03-13','2019-03-15T12:00:00.000000000'))
-ds_control = preprocess_era5_dataset(ds_control, forecast=True)
-# Load the NetCDF files into a combined dataset
-ds_ips_rebuild = xr.open_mfdataset('D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s7_201903*.nc', 
-                                   combine='nested', concat_dim='time', preprocess=adjust_time).sel(time=slice('2019-03-13','2019-03-15T12:00:00.000000000'))
-ds_ips_rebuild = preprocess_era5_dataset(ds_ips_rebuild)
-
-ds_gpm = xr.open_dataset(r'D:\paper_4\data\nasa_data\gpm_imerg_201903.nc').sel(time=slice('2019-03-13','2019-03-15T12:00:00.000000000'))
-ds_gpm = ds_gpm.rename({'precipitation': 'Ptot'})
-
-
-# load IBTRACS data
-ds_ibtracs = xr.open_mfdataset(r'D:\paper_4\data\ibtracs\IBTrACS.since1980.v04r00.nc')
-ds_storm, df_storm = locate_storm(ds_ibtracs, '2019063S18038') # idai: '2019063S18038'
-# convert and rename usa_wind to U10m and usa_pres to mslp
-df_storm['U10m'] = df_storm['usa_wind']
-df_storm['mslp'] = df_storm['usa_pres']
-df_storm = df_storm.drop(columns=['usa_wind', 'usa_pres'])
-df_storm['U10m'] = df_storm['U10m']*0.5144444444444444
-df_storm['mslp'] = df_storm['mslp']
-
-# plot ds_era5 precipitation at time step 0 on a map and add coastlines
-fig = plt.figure(figsize=(10,10))
-ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
-ax.coastlines(resolution='10m')
-ax.add_feature(cfeature.BORDERS, linestyle=':')
-ds_ips_rebuild['Ptot'].isel(time=48).plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', cmap = 'Blues',robust=True, add_colorbar=True)
-# add lat lon coordinates on axis
-gl = ax.gridlines(draw_labels=True, linestyle=':', color='black',alpha=0.5)
-plt.show()
-
-# track storm 
-storm_track_ens = storm_tracker_mslp_ens(ds, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
-# track ds_era5 storm
-storm_track_era5 = storm_tracker_mslp_updated(ds_era5, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
-# track control run
-storm_track_control = storm_tracker_mslp_updated(ds_control, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
-# track test
-storm_track_rebuild = storm_tracker_mslp_updated(ds_ips_rebuild, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
-
-plot_minimum_track(storm_track_ens)
-plot_minimum_track(storm_track_era5)
-plot_minimum_track(storm_track_control)
-df_storm_subset = df_storm[(df_storm['time'] >= storm_track_ens.index[0]) & (df_storm['time'] <= storm_track_ens.index[-1])]
-
-plot_minimum_track(storm_track_control,df_storm_subset)
-plot_minimum_track(storm_track_rebuild, df_storm_subset)
-
-# Create a figure and a map projection
-fig = plt.figure(figsize=(10, 6))
-ax = plt.axes(projection=ccrs.PlateCarree())
-# Plot the data
-ax.scatter(df_storm['lon'], df_storm['lat'], color='blue')
-ax.scatter(storm_track_era5['lon'], storm_track_era5['lat'], color='red')
-ax.scatter(storm_track_rebuild['lon'], storm_track_rebuild['lat'], color='green')
-# Add coastlines
-ax.coastlines()
-# Show the plot
-plt.show()
-
-# latitude and longitude of Beira, Mozambique
-plot_cumulative_precipitation_timeseries(ds, -19.8436, 34.8389, ds_ips_rebuild)
-plot_var_timeseries(ds, -19.8436, 34.8389, 'mslp', ds_ips_rebuild)
-plot_var_timeseries(ds, -19.8436, 34.8389, 'U10m', ds_ips_rebuild)
-plot_var_timeseries(ds, -19.8436, 34.8389, 'Ptot', ds_era5)
-
-ds_gpm['Ptot'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'GPM', linestyle='dashed', linewidth=3.5 )
-ds_era5['Ptot'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'era5')
-ds_ips_rebuild['Ptot'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'ips_rebuild')
-ds_control['Ptot'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'control')
-plt.legend()
-plt.show()
-
-
-ds_composite_ens = storm_composite_ens(ds, storm_track_ens, radius = 2)
-# calculate composite for ds_era5
-ds_era5_composite = storm_composite(ds_era5, storm_track_era5, radius = 2)
-# calculate composite for control run
-ds_control_composite = storm_composite(ds_control, storm_track_control, radius = 2)
-ds_ips_rebuild_composite = storm_composite(ds_ips_rebuild, storm_track_rebuild, radius = 2)
-
-# # plot a map with cartopy using the first time step of the dataset
-# fig = plt.figure(figsize=(10,10))
-# ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
-# ax.coastlines(resolution='10m')
-# ax.add_feature(cfeature.BORDERS, linestyle=':')
-# # plot the grid
-# grid = ds_composite['Ptot'].isel(time=-10)
-# contour = grid.plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', cmap = 'Blues',robust=True, add_colorbar=True)
-# # add a grid with the lines representing each lat and lon degree
-# gl = ax.gridlines(draw_labels=True, linestyle=':', color='black',
-#                       alpha=0.5)
-# plt.show()
 
 def plot_comp_variable_timeseries(ds_composite, variable, ds_era5_composite=None, agg_method='mean', obs_data=None):
     # Aggregate the composite data
@@ -470,59 +441,140 @@ def plot_comp_variable_timeseries(ds_composite, variable, ds_era5_composite=None
         # Show the plot
     plt.show()
 
-plot_comp_variable_timeseries(ds_composite_ens, 'Ptot', ds_era5_composite=ds_control_composite, agg_method='mean')
-plot_comp_variable_timeseries(ds_composite_ens, 'mslp', ds_era5_composite=ds_control_composite, agg_method='min', obs_data=df_storm)
-plot_comp_variable_timeseries(ds_composite_ens, 'U10m', ds_era5_composite=ds_ips_rebuild_composite, agg_method='max', obs_data=df_storm)
+####   
+# make the rest of the script if main
+if __name__ == '__main__':
+        
+    # load data
+    file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_010_vars_n50_s90_20190313.nc' # ecmwf_eps_pf_vars_n15_s90_20190313 / ecmwf_eps_pf_vars_n15_s90_20170907
+    start_time = '2019-03-14T00:00:00.000000000'
+    end_time = '2019-03-15T12:00:00.000000000'
+    ds = xr.open_dataset(file_path).sel(time=slice(start_time,end_time))
+    ds = preprocess_era5_dataset(ds, forecast=True)
+    # load ERA5 data
+    ds_era5 = xr.open_dataset(r'D:\paper_4\data\era5\era5_hourly_vars_idai_single_2019_03.nc').sel(time=slice(start_time,end_time))
+    ds_era5 = preprocess_era5_dataset(ds_era5)
+    #load control run
+    ds_control = xr.open_dataset(r'D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s90_20190313_00.nc').sel(time=slice(start_time,end_time))
+    ds_control = preprocess_era5_dataset(ds_control, forecast=True)
+    # Load the NetCDF files into a combined dataset
+    ds_ips_rebuild = xr.open_mfdataset('D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s7_201903*.nc', 
+                                    combine='nested', concat_dim='time', preprocess=adjust_time).sel(time=slice(start_time,end_time))
+    ds_ips_rebuild = preprocess_era5_dataset(ds_ips_rebuild)
+
+    ds_gpm = xr.open_dataset(r'D:\paper_4\data\nasa_data\gpm_imerg_201903.nc').sel(time=slice(start_time,end_time))
+    ds_gpm = ds_gpm.rename({'precipitation': 'tp'})
+
+    ds_gfs = xr.open_mfdataset(r'D:\paper_4\data\gfs\v2\gfs.0p25.201903*.nc').sel(time=slice(start_time,end_time))
+    # rename PRATE_l1_avg_1 to Ptot  U_GRD_L103   V_GRD_L103   PRMSL_L101
+    ds_gfs = ds_gfs.rename({'U_GRD_L103': 'u10', 'V_GRD_L103': 'v10', 'PRMSL_L101': 'msl'})
+    U10m_totalwind(ds_gfs)
+
+    # load IBTRACS data
+    ds_ibtracs = xr.open_mfdataset(r'D:\paper_4\data\ibtracs\IBTrACS.since1980.v04r00.nc')
+    ds_storm, df_storm = locate_storm(ds_ibtracs, '2019063S18038') # idai: '2019063S18038'
+    # convert and rename usa_wind to U10m and usa_pres to mslp
+    df_storm['U10'] = df_storm['usa_wind']
+    df_storm['msl'] = df_storm['usa_pres']
+    df_storm = df_storm.drop(columns=['usa_wind', 'usa_pres'])
+    df_storm['U10'] = df_storm['U10']*0.5144444444444444
+    df_storm_subset = df_storm[(df_storm['time'] >= ds.time[0].values) & (df_storm['time'] <= ds.time[-1].values)]
+
+    df_storm2, df_storm_subset2 = process_ibtracs_storm_data(ibtracs_path = r'D:\paper_4\data\ibtracs\IBTrACS.since1980.v04r00.nc',
+                                                  storm_id = '2019063S18038', 
+                                                  ds_time_range = ds)
+
+    # plot ds_era5 precipitation at time step 0 on a map and add coastlines
+    fig = plt.figure(figsize=(10,10))
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
+    ax.coastlines(resolution='10m')
+    ax.add_feature(cfeature.BORDERS, linestyle=':')
+    ds_ips_rebuild['tp'].isel(time=35).plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', cmap = 'Blues',robust=True, add_colorbar=True)
+    # add lat lon coordinates on axis
+    gl = ax.gridlines(draw_labels=True, linestyle=':', color='black',alpha=0.5)
+    plt.show()
+
+    # track storm 
+    storm_track_ens = storm_tracker_mslp_ens(ds, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+    # track ds_era5 storm
+    storm_track_era5 = storm_tracker_mslp_updated(ds_era5, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+    # track control run
+    storm_track_control = storm_tracker_mslp_updated(ds_control, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+    # track test
+    storm_track_rebuild = storm_tracker_mslp_updated(ds_ips_rebuild, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+    # track gfs
+    storm_track_gfs = storm_tracker_mslp_updated(ds_gfs, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+
+    plot_minimum_track(storm_track_ens)
+    plot_minimum_track(storm_track_era5)
+    plot_minimum_track(storm_track_control)
+    plot_minimum_track(storm_track_control,df_storm_subset)
+    plot_minimum_track(storm_track_rebuild, df_storm_subset)
+    plot_minimum_track(storm_track_gfs, df_storm_subset)
+
+    # Create a figure and a map projection
+    fig = plt.figure(figsize=(10, 6))
+    ax = plt.axes(projection=ccrs.PlateCarree())
+    # Plot the data
+    ax.scatter(df_storm['lon'], df_storm['lat'], color='blue')
+    ax.scatter(storm_track_era5['lon'], storm_track_era5['lat'], color='red')
+    ax.scatter(storm_track_rebuild['lon'], storm_track_rebuild['lat'], color='green')
+    # Add coastlines
+    ax.coastlines()
+    # Show the plot
+    plt.show()
+
+    # latitude and longitude of Beira, Mozambique
+    plot_cumulative_precipitation_timeseries(ds, -19.8436, 34.8389, ds_ips_rebuild)
+    plot_var_timeseries(ds, -19.8436, 34.8389, 'msl', ds_ips_rebuild)
+    plot_var_timeseries(ds, -19.8436, 34.8389, 'u10', ds_ips_rebuild)
+    plot_var_timeseries(ds, -19.8436, 34.8389, 'tp', ds_era5)
+
+    ds_gpm['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'GPM', linestyle='dashed', linewidth=3.5 )
+    ds_era5['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'era5')
+    ds_ips_rebuild['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'ips_rebuild')
+    ds_control['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').plot(label = 'control')
+    plt.legend()
+    plt.show()
+
+    # Calculate composite.
+    ds_composite_ens = storm_composite_ens(ds, storm_track_ens, radius = 2)
+    ds_era5_composite = storm_composite(ds_era5, storm_track_era5, radius = 2)
+    ds_control_composite = storm_composite(ds_control, storm_track_control, radius = 2)
+    ds_ips_rebuild_composite = storm_composite(ds_ips_rebuild, storm_track_rebuild, radius = 2)
+    ds_gfs_composite = storm_composite(ds_gfs, storm_track_gfs, radius = 2)
+
+    plot_comp_variable_timeseries(ds_composite_ens, 'tp', ds_era5_composite=ds_control_composite, agg_method='mean')
+    plot_comp_variable_timeseries(ds_composite_ens, 'msl', ds_era5_composite=ds_control_composite, agg_method='min', obs_data=df_storm)
+    plot_comp_variable_timeseries(ds_composite_ens, 'u10', ds_era5_composite=ds_ips_rebuild_composite, agg_method='max', obs_data=df_storm)
 
 
-orig_u10m = ds_composite_ens['U10m'].max(['lat','lon']).mean()
-orig_u10m_era5 = ds_era5_composite['U10m'].max(['lat','lon']).mean()
-ref_u10m = df_storm[df_storm['time'].between(ds_composite_ens.time.min().values, ds_composite_ens.time.max().values)]['U10m'].mean()
+    orig_u10m = ds_composite_ens['u10'].max(['lat','lon']).mean()
+    orig_u10m_era5 = ds_era5_composite['u10'].max(['lat','lon']).mean()
+    ref_u10m = df_storm[df_storm['time'].between(ds_composite_ens.time.min().values, ds_composite_ens.time.max().values)]['u10'].mean()
 
-bc_u10m = ref_u10m/orig_u10m
-bc_u10m_era5 = ref_u10m/orig_u10m_era5
+    bc_u10m = ref_u10m/orig_u10m
+    bc_u10m_era5 = ref_u10m/orig_u10m_era5
+    # caclulate the bias correction factor for wind speed at every time step
+    orig_u10m_time = ds_composite_ens['u10'].max(['lat','lon'])
+    orig_u10m_era5_time = ds_era5_composite['u10'].max(['lat','lon'])
+    ref_u10m_time = df_storm[df_storm['time'].between(ds_composite_ens.time.min().values, ds_composite_ens.time.max().values)]['u10']
+    bc_u10m_time = ref_u10m_time/orig_u10m_time
 
-# plot a map with cartopy using the first time step of the dataset
-fig = plt.figure(figsize=(10,10))
-ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
-ax.coastlines(resolution='10m')
-ax.add_feature(cfeature.BORDERS, linestyle=':')
+    # compare the bias between ds_gpm and ds_era5['tp']
+    orig_precip = ds_gpm['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').mean()
+    orig_precip_era5 = ds_era5['tp'].sel(lat=-19.8436, lon=34.8389, method='nearest').mean()
+    bc_precip = orig_precip/orig_precip_era5
 
-# plot the grid
-grid = ds['Ptot'].sel(number=2).isel(time=10)
-contour = grid.plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', cmap = 'Blues',robust=True, add_colorbar=True)
-plt.show()
+    ds_composite_ens_adj = ds_composite_ens.copy()
+    ds_composite_ens_adj['u10'] = ds_composite_ens['u10']*bc_u10m
 
 
-# plot a map with cartopy using the first time step of the dataset
-fig = plt.figure(figsize=(10,10))
-ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
-ax.coastlines(resolution='10m')
-ax.add_feature(cfeature.BORDERS, linestyle=':')
+    # Create a figure and an axis
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Plot the time series of the variable for each number
+    sns.lineplot(data=ds_composite_ens.max(dim=['lat','lon']).to_dataframe().reset_index(), x='time', y='u10', hue='number', linewidth=1.5, ax=ax)
+    sns.lineplot(data=ds_ips_rebuild_composite.max(dim=['lat','lon']).to_dataframe().reset_index(), x='time', y='u10', linewidth=3.5, ax=ax, label='control', color = 'red')
+    sns.lineplot(data=df_storm_subset, x='time', y='u10', linewidth=3.5, ax=ax, label='observed', color = 'black', linestyle='dashed')
 
-# plot the grid
-grid = ds['U10m'].sel(number=2).isel(time=10)
-contour = grid.plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', robust=True, add_colorbar=True)
-plt.show()
-
-# plot a map with cartopy using the first time step of the dataset
-fig = plt.figure(figsize=(10,10))
-ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())    #
-ax.coastlines(resolution='10m')
-ax.add_feature(cfeature.BORDERS, linestyle=':')
-
-# plot the grid
-grid = ds['mslp'].sel(number=2).isel(time=10)
-contour = grid.plot(ax=ax, transform=ccrs.PlateCarree(), x='lon', y='lat', robust=True, add_colorbar=True)
-plt.show()
-
-# plot timeseries of ds for all variables and for number == 1 in differnt subplots
-ds_msl_min = ds['mslp'].min(dim=['lat','lon']).to_dataframe().reset_index()
-sns.lineplot(x='time', y='msl', hue='number', data=ds_msl_min)
-plt.show()
-
-# calculate ds_tp_max as the maximum of ds['tp'] along the latitude and longitude dimensions
-ds_tp_max = ds['Ptot'].mean(dim=['lat','lon']).to_dataframe().reset_index()
-sns.lineplot(x='time', y='Ptot', hue='number', data=ds_tp_max)
-plt.show()
-
+    plt.show()
