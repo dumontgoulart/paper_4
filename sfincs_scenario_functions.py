@@ -275,7 +275,7 @@ def create_sfincs_base_model(root_folder, scenario, storm, data_libs, topo_map,
     )
 
     # Set up infiltration data
-    sf.setup_cn_infiltration("gcn250", antecedent_moisture="avg")
+    sf.setup_cn_infiltration("gcn250", antecedent_moisture="dry")
 
     # Add time-series:
     start_datetime = datetime.strptime(tstart, '%Y%m%d %H%M%S')
@@ -381,6 +381,56 @@ def shift_time_in_netcdf(file_path, output_file_path, days_to_shift):
     
     return ds_shifted
 
+import shutil
+import os
+
+def copy_entire_folder(src_folder, dest_folder):
+    """
+    Copies an entire folder and its content to a new location with a new name.
+
+    Parameters:
+    src_folder (str): The path to the source folder.
+    dest_folder (str): The path to the destination folder with the new name.
+    """
+    try:
+        shutil.copytree(src_folder, dest_folder)
+        print(f"Folder '{src_folder}' copied successfully to '{dest_folder}'")
+    except Exception as e:
+        print(f"Error copying folder: {e}")
+
+def copy_two_files(src_folder, dest_folder, file1_name, file2_name):
+    """
+    Copies two files from the source folder to the destination folder.
+
+    Parameters:
+    src_folder (str): The path to the source folder.
+    dest_folder (str): The path to the destination folder.
+    file1_name (str): The name of the first file to copy.
+    file2_name (str): The name of the second file to copy.
+    """
+    # Construct the full paths for the source and destination of each file
+    src_file1 = os.path.join(src_folder, file1_name)
+    src_file2 = os.path.join(src_folder, file2_name)
+    
+    dest_file1 = os.path.join(dest_folder, file1_name)
+    dest_file2 = os.path.join(dest_folder, file2_name)
+    
+    # Check if the source files exist
+    if not os.path.exists(src_file1):
+        print(f"File not found: {src_file1}")
+        return
+    if not os.path.exists(src_file2):
+        print(f"File not found: {src_file2}")
+        return
+    
+    # Ensure the destination folder exists, create if it does not
+    if not os.path.exists(dest_folder):
+        os.makedirs(dest_folder)
+    
+    # Copy each file
+    shutil.copy2(src_file1, dest_file1)
+    shutil.copy2(src_file2, dest_file2)
+    print(f"Files copied successfully to {dest_folder}")
 
 #################
 # Running SFINCS / RUN MODEL
@@ -428,13 +478,13 @@ grid_setup = {
 
 # offshore simulation dates
 tref_off = '20190301 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstart_off = '20190308 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+tstart_off = '20190313 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
 tstop_off = '20190317 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
 hours_shifted = -137 # hour for peak tide
 
 # onshore simulation dates
-tref = '20190313 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstart = '20190313 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+tref = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+tstart = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
 tstop = '20190316 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
 
 # libraries
@@ -453,6 +503,10 @@ shifted_data = shift_time_in_netcdf(r"D:\paper_4\data\era5\era5_hourly_vars_idai
 ### Add to catalogue the new data ##############################################
 data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'era5_hourly_sample', 
                        f'era5_hourly_test', f'd:/paper_4/data/era5/era5_hourly_vars_idai_single_2019_03.nc')
+
+data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'era5_hourly_sample', 
+                       f'era5_hourly_bc', f'd:/paper_4/data/seas5/bias_corrected/era5_hourly_vars_idai_single_2019_03_bc.nc')
+
 # add the 5d shifted data to the catalog
 data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'era5_hourly_sample', 
                        f'era5_hourly_5d_shifted', f'd:/paper_4/data/era5/era5_hourly_vars_idai_single_2019_03_5d_shifted.nc')
@@ -463,6 +517,9 @@ data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 
 #TODO: this file has ensemble members, I need to find a way of handling them or process each member seperately.
 data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'ifs_ens_hourly_test',
                             f'ifs_ens_idai_hourly', f'd:/paper_4/data/seas5/bias_corrected/ecmwf_eps_pf_010_vars_n50_s60_20190313_bc.nc')
+# ifs cf
+data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'ifs_ens_hourly_test',
+                            f'ifs_cf_ens_idai_hourly', f'd:/paper_4/data/seas5/bias_corrected/ecmwf_eps_cf_010_vars_s72_20190313_bc.nc')
 
 ################################################################################
 
@@ -478,8 +535,8 @@ update_sfincs_model(base_root = r'D:\paper_4\data\sfincs_input\test_era5', new_r
                     data_libs = data_libs, mode = 'era5', waterlevel_path=None, slr=None)
 
 # ####### Create forcings for offshore model matching the grid
-generate_forcing(grid_setup, root_folder,'base', r'D:\paper_4\data\quadtree_era5_forcing',
-                 data_libs, tref_off, tstart_off, tstop_off, forcing_catalog = 'era5_hourly_test',
+generate_forcing(grid_setup, root_folder,'base', r'D:\paper_4\data\quadtree_ifs_cf_forcing_bc',
+                 data_libs, tref_off, tstart_off, tstop_off, forcing_catalog = 'ifs_cf_ens_idai_hourly',
                  forcings=['wind', 'pressure'])
 
 # max tide scenario: change the external wind and pressure values from the 14th to the 9th, so in terms of total days: 5 days
@@ -488,15 +545,20 @@ generate_forcing(grid_setup, root_folder, 'max_tide', rf'D:\paper_4\data\quadtre
                  data_libs, tref_off, tstart_off, tstop_off, forcing_catalog = 'era5_hourly_5d_shifted',
                  forcings=['wind', 'pressure'])
 
+# copy the folders and external forcings
+copy_entire_folder(rf'D:\paper_4\data\quadtree_beira_base', rf'D:\paper_4\data\quadtree_ifs_test')
+copy_two_files(rf'D:\paper_4\data\quadtree_ifs_cf_forcing_bc', r'D:\paper_4\data\quadtree_ifs_test', 'press_2d.nc', 'wind_2d.nc')
 
 # #######
 
 # # 2) RUN OFFSHORE SFINCS MODEL 
 #TODO: this should not be a series of running but a single run based on different scenario options
-run_sfincs(base_root = 'D:\paper_4\data\quadtree_era5', fn_exe = fn_exe)
+run_sfincs(base_root = 'D:\paper_4\data\quadtree_ifs_cf_bc', fn_exe = fn_exe)
 
 # Run offshore sfincs model with max tide
 run_sfincs(base_root = r'D:\paper_4\data\quadtree_era5_max_tide', fn_exe = fn_exe)
+
+# #######
 
 # 3a) generate base SFINCS model for onshore
 create_sfincs_base_model(root_folder = root_folder, scenario = 'base', storm = storm, data_libs = data_libs,
@@ -504,8 +566,11 @@ create_sfincs_base_model(root_folder = root_folder, scenario = 'base', storm = s
                          tref = tref, tstart = tstart, tstop = tstop)
 
 # 3b) Use storm surge on ONSHORE SFINCS models
-update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_surge', 
+update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_surge_short', 
                     data_libs = data_libs, mode = 'surge', waterlevel_path = r"D:/paper_4/data/quadtree_era5/sfincs_his_spider.nc")
+# surge era5 bias corrected
+update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_surge_ifs_cf_bc', 
+                    data_libs = data_libs, mode = 'surge', waterlevel_path = r"D:/paper_4/data/quadtree_ifs_cf_bc/sfincs_his.nc")
 # now with slr = 1 + storm surge
 update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_surge_slr100', 
                     data_libs = data_libs, mode = 'surge', 
@@ -522,9 +587,23 @@ update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root
 
 
 # 4) RUN ONSHORE SFINCS MODEL
-run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_rain_gpm', fn_exe = fn_exe) # test_slr100_surge
+run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
 
 
+# update defensive mechanisms on the model
+sf = SfincsModel(data_libs=data_libs, root=r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc', mode="r")
+sf.read()
+
+# Set new root for writing
+sf.set_root(root=r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', mode='w+')
+
+sf.setup_structures(
+    structures=r"D:\paper_4\data\qgis\beira_seawall.geojson",
+    stype="weir",
+    dz=15,
+)
+
+sf.write()
 
 
 # mod_nr = generate_maps(sfincs_root = r'D:\paper_4\data\sfincs_input\test_base_surge', catalog_path = f'D:\paper_4\data\sfincs_input\test_base\hydromt_data.yml', storm = storm, scenario = 'surge', mode = 'surge')
@@ -571,18 +650,20 @@ plt.show()
 
 # open the sfincs_map.nc file and plot the map
 ds = xr.open_dataset(f'D:\paper_4\data\quadtree_era5\sfincs_map_spider.nc')
-ds_his = xr.open_dataset(f'D:\paper_4\data\quadtree_era5\sfincs_his_era5.nc')
+ds_his = xr.open_dataset(f'D:\paper_4\data\quadtree_ifs_cf_bc\sfincs_his.nc')
 ds_his_maxtide = xr.open_dataset(f'D:\paper_4\data\quadtree_era5_max_tide\sfincs_his.nc')
 ds_his_tides = xr.open_dataset(f'D:\paper_4\data\quadtree_era5\sfincs_his_tides.nc')
 ds_his_spider = xr.open_dataset(f'D:\paper_4\data\quadtree_era5\sfincs_his_spider.nc')
+ds_his_era5 = xr.open_dataset(f'D:\paper_4\data\quadtree_era5\sfincs_his_era5.nc')
 # ds_truth = xr.open_dataset(rf'P:\11209202-tc-risk-analysis-2023\01_Beira_forecasting_TCFF\04_model_runs\20230509_variations_Python_based_n10000\days_before_landfall_1\ensemble09430\sfincs_his.nc')
 # ds_truth2 = xr.open_dataset(rf'P:\11209202-tc-risk-analysis-2023\01_Beira_forecasting_TCFF\04_model_runs\20230310_variations_Python_based\tide_only\sfincs_his.nc')
 # get maximum value of point_zs for each ds_his and ds_truth
-ds_his_maxtide['point_zs'].max()
+ds_his_spider['point_zs'].max()
 # ds_truth['point_zs'].max()
 
 # plot the timeseries for point_zs for station 'station_name' == 10
-ds_his_maxtide['point_zs'].isel(stations = 4).plot(label = 'henrique_maxtide')
+ds_his['point_zs'].isel(stations = 4).plot(label = 'test - short')
+ds_his_era5['point_zs'].isel(stations = 4).plot(label = 'era5')
 ds_his_tides['point_zs'].isel(stations = 4).plot(label = 'kees_tides_only')
 ds_his_spider['point_zs'].isel(stations = 4).plot(label = 'kees_spiderweb')
 # ds_truth['point_zs'].isel(stations = 4).plot(label = 'kees2')

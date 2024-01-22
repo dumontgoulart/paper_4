@@ -66,7 +66,7 @@ def interpolate_dataframe(df, columns_to_keep, time_col, new_freq):
     df_interpolated = df_subset.resample(new_freq).asfreq().interpolate(method='time')
     return df_interpolated.to_xarray()
 
-def preprocess_era5_dataset(ds, forecast = False, calculate_wind = True):
+def preprocess_era5_dataset(ds, forecast = False, calculate_wind = True, tprate_convert = False):
     # Rename coordinates
     if 'latitude' in ds.coords:
         ds = ds.rename({'latitude': 'lat', 'longitude': 'lon'})
@@ -79,6 +79,10 @@ def preprocess_era5_dataset(ds, forecast = False, calculate_wind = True):
         ds['tp'] = ds['tp'].diff(dim='time', n=1, label='lower')
     # Convert mean sea level pressure from Pa to hPa
     ds['msl'] = ds['msl']/100
+    # convert tprate to tp
+    if tprate_convert == True:
+        ds['tprate'] = ds['tprate']*3600
+        ds['tp'] = ds['tprate']       
     # Adjust longitude coordinates to range from -180 to 180
     ds.coords['lon'] = (ds.coords['lon'] + 180) % 360 - 180
     # Calculate the total wind speed

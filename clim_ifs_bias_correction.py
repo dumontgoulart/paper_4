@@ -17,12 +17,50 @@ import metpy.xarray as mpxarray
 from scipy.signal import savgol_filter
 from scipy.interpolate import BSpline
 from scipy.ndimage import laplace
+from haversine import haversine
 
 import clim_functions as climfun 
 ################################################################################
 
-def bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset_1hour, 
-                         bc_start_date, bc_end_date, output_path=None):
+def shift_on_closest_time(ds_storm_subset, storm_track_control, ds_control, target_time):
+    """
+    Find the closest datetime in storm_track_control to the target_time in ds_storm_subset and 
+    shift ds_control by the time difference.
+
+    :param ds_storm_subset: xarray Dataset with lat and lon coordinates for the subset
+    :param storm_track_control: DataFrame with lat and lon columns for the control track
+    :param ds_control: xarray Dataset to be shifted
+    :param target_time: Target time as a string in format 'YYYY-MM-DD HH:MM:SS'
+    :return: Shifted xarray Dataset
+    """
+    # Extract target lat, lon from ds_storm_subset at the specified time
+    target_time_stamp = pd.Timestamp(target_time)
+    target_lat = ds_storm_subset['lat'].sel(time=target_time_stamp).item()
+    target_lon = ds_storm_subset['lon'].sel(time=target_time_stamp).item()
+
+    # Calculate Haversine distances
+    distances = [haversine((target_lat, target_lon), (lat, lon)) 
+                 for lat, lon in zip(storm_track_control['lat'].values, storm_track_control['lon'].values)]
+
+    # Create a new DataFrame for distances
+    df_distance = storm_track_control.copy()
+    df_distance['distances'] = distances
+
+    # Find the datetime of the minimum distance
+    time_min = df_distance['distances'].idxmin()
+
+    # Calculate time difference and shift points
+    time_difference = target_time_stamp - time_min
+    time_resolution = pd.Timedelta('1H')
+    shift_points = time_difference // time_resolution
+
+    # Shift ds_control
+    ds_shifted = ds_control.shift(time=int(shift_points))
+
+    return ds_shifted
+
+def bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset_1hour, df_track,
+                         bc_start_date, bc_end_date, var = 'tprate', ensemble = False, output_path=None):
     """
     Applies bias correction to a dataset and optionally saves the result as a NetCDF file.
 
@@ -38,36 +76,70 @@ def bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset
     Returns:
     xarray.Dataset: Bias-corrected dataset.
     """
-    if 'tprate' in ds_composite_ens:
-        print('converting tprate to tp')
     # Calculate bias correction ratios
-    bc_ratio_tp = (ds_composite_gpm['tp'].mean(dim=['lat','lon'])
-                   .sel(time=slice(bc_start_date, bc_end_date)).mean() / 
-                   ds_composite_ens['tprate'].mean(dim=['lat','lon']).mean(dim=['number'])
-                   .sel(time=slice(bc_start_date, bc_end_date)).mean())
-
-    bc_ratio_msl = (ds_storm_subset_1hour['msl'].sel(time=slice(bc_start_date, bc_end_date)).mean() / 
-                    ds_composite_ens['msl'].min(dim=['lat','lon']).mean(dim=['number'])
+    if ensemble == True:
+        bc_ratio_tp = (ds_composite_gpm['tp'].mean(dim=['lat','lon'])
+                    .sel(time=slice(bc_start_date, bc_end_date)).mean() / 
+                    ds_composite_ens[var].mean(dim=['lat','lon']).mean(dim=['number'])
                     .sel(time=slice(bc_start_date, bc_end_date)).mean())
 
-    bc_ratio_U10 = (ds_storm_subset_1hour['U10'].sel(time=slice(bc_start_date, bc_end_date)).mean() / 
-                    ds_composite_ens['U10'].max(dim=['lat','lon']).mean(dim=['number'])
+        bc_ratio_msl = (ds_storm_subset_1hour['msl'].sel(time=slice(bc_start_date, bc_end_date)).mean() - 
+                        ds_composite_ens['msl'].min(dim=['lat','lon']).mean(dim=['number'])
+                        .sel(time=slice(bc_start_date, bc_end_date)).mean())
+
+        bc_ratio_U10 = (ds_storm_subset_1hour['U10'].sel(time=slice(bc_start_date, bc_end_date)).mean() - 
+                        ds_composite_ens['U10'].max(dim=['lat','lon']).mean(dim=['number'])
+                        .sel(time=slice(bc_start_date, bc_end_date)).mean())
+    else:
+        bc_ratio_tp = (ds_composite_gpm['tp'].mean(dim=['lat','lon'])
+                    .sel(time=slice(bc_start_date, bc_end_date)).mean() / 
+                    ds_composite_ens[var].mean(dim=['lat','lon'])
                     .sel(time=slice(bc_start_date, bc_end_date)).mean())
 
-    # Apply bias correction
-    ds_ens_bc = ds.copy()
-    ds_ens_bc['tp'] = ds['tprate'] * bc_ratio_tp
-    ds_ens_bc['msl'] = ds['msl'] * bc_ratio_msl
-    ds_ens_bc['U10'] = ds['U10'] * bc_ratio_U10
+        bc_ratio_msl = (ds_storm_subset_1hour['msl'].sel(time=slice(bc_start_date, bc_end_date)).mean() - 
+                        ds_composite_ens['msl'].min(dim=['lat','lon'])
+                        .sel(time=slice(bc_start_date, bc_end_date)).mean())
 
-    # Update metadata
-    ds_ens_bc['tp'].attrs.update({'units': 'mm/h', 'long_name': 'Total precipitation rate'})
-    ds_ens_bc['msl'].attrs.update({'units': 'hPa', 'long_name': 'Mean sea level pressure'})
-    ds_ens_bc['U10'].attrs.update({'units': 'm/s', 'long_name': '10 metre total wind'})
+        bc_ratio_U10 = (ds_storm_subset_1hour['U10'].sel(time=slice(bc_start_date, bc_end_date)).mean() - 
+                        ds_composite_ens['U10'].max(dim=['lat','lon'])
+                        .sel(time=slice(bc_start_date, bc_end_date)).mean())
+
+    # Apply bias correction only for where the storm is in space and time
+    ds_base = ds.copy()
+    radius = 2
+    ds_ens_bc = []
+
+    for time_step in df_track.index.values: # .time.values:
+        
+        center_lat = df_track.loc[time_step, 'lat']
+        center_lon = df_track.loc[time_step, 'lon']
+
+        # create mask of where the storm (subset) is
+        mask = create_mask(ds_base, center_lat, center_lon, radius)
+        # mask.plot() # test to see if it works
+
+        ds_ens_bc_subset = ds_base.sel(time=time_step).where(mask)
+        # apply bias correction        
+        ds_ens_bc_subset[var] = ds_ens_bc_subset[var] * bc_ratio_tp
+        ds_ens_bc_subset['msl'] = ds_ens_bc_subset['msl'] + bc_ratio_msl
+        ds_ens_bc_subset['U10'] = ds_ens_bc_subset['U10'] + bc_ratio_U10
+
+        ds_ens_bc_test = ds_base.sel(time=time_step).where(~mask, ds_ens_bc_subset)
+        
+        ds_ens_bc.append(ds_ens_bc_test)
+
+    ds_ens_bc = xr.concat(ds_ens_bc, dim = 'time')
 
     # Adjust wind components based on the original wind direction
     ds_ens_bc['wind_direction'] = climfun.calculate_wind_direction_xarray(ds, u10_var='u10', v10_var='v10')
     ds_ens_bc['u10'], ds_ens_bc['v10'] = climfun.decompose_wind(ds_ens_bc, U10_var='U10', wind_dir_var='wind_direction')
+
+    # Update metadata
+    ds_ens_bc[var].attrs.update({'units': 'mm/h', 'long_name': 'Total precipitation rate'})
+    ds_ens_bc['msl'].attrs.update({'units': 'hPa', 'long_name': 'Mean sea level pressure'})
+    ds_ens_bc['U10'].attrs.update({'units': 'm/s', 'long_name': '10 metre total wind'})
+    ds_ens_bc['u10'].attrs.update({'units': 'm/s', 'long_name': '10 metre U wind component'})
+    ds_ens_bc['v10'].attrs.update({'units': 'm/s', 'long_name': '10 metre V wind component'})
 
     # Save as NetCDF if output path is provided
     if output_path:
@@ -75,89 +147,132 @@ def bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset
 
     return ds_ens_bc
 
+def create_mask(ds, center_lat, center_lon, radius):
+        """Create a mask for points within the specified radius of the center."""
+        lat_condition = (ds.lat >= center_lat - radius) & (ds.lat <= center_lat + radius)
+        lon_condition = (ds.lon >= center_lon - radius) & (ds.lon <= center_lon + radius)
+        return lat_condition & lon_condition
+
+
 # Load data and pararmeters
-file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_010_vars_n50_s60_20190313.nc' # ecmwf_eps_pf_vars_n15_s90_20190313 / ecmwf_eps_pf_vars_n15_s90_20170907
+file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_010_vars_n50_s48_20190314.nc' # ecmwf_eps_pf_vars_n15_s90_20190313 / ecmwf_eps_pf_vars_n15_s90_20170907
 start_time = '2019-03-14T00:00:00.000000000'
 end_time = '2019-03-15T12:00:00.000000000'
 
 # load IFS ensemble
-ds = xr.open_dataset(file_path).sel(time=slice(start_time,end_time))
-ds = climfun.preprocess_era5_dataset(ds, forecast=True)
-ds['tprate'] = ds['tprate']*3.6*1000
+ds = xr.open_dataset(file_path)
+ds = climfun.preprocess_era5_dataset(ds, forecast=True, tprate_convert=True)
+ds_ens=ds.copy().sel(time=slice(start_time,end_time))
+
+# load control run
+ds_control_orig = xr.open_dataset(r'D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_vars_s72_20190313.nc')
+ds_control_orig = climfun.preprocess_era5_dataset(ds_control_orig, forecast=True, tprate_convert=True)
+ds_control = ds_control_orig.copy().sel(time=slice(start_time,end_time))
 
 # load ERA5 dataset
-ds_era5 = xr.open_dataset(r'D:\paper_4\data\era5\era5_hourly_vars_idai_single_2019_03.nc').sel(time=slice(start_time,end_time)).rename({'latitude': 'lat', 'longitude': 'lon'})
+ds_era5 = xr.open_dataset(r'D:\paper_4\data\era5\era5_hourly_vars_idai_single_2019_03.nc').sel(time=slice(start_time,end_time))
 ds_era5 = climfun.preprocess_era5_dataset(ds_era5)
 
-ds_control = xr.open_dataset(r'D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s90_20190313_00.nc').sel(time=slice(start_time,end_time))
-ds_control = climfun.preprocess_era5_dataset(ds_control, forecast=True)
+# try the 7 lead time rebuild forecast
+ds_ips_rebuild = xr.open_mfdataset('D:\paper_4\data\seas5\ecmwf\ecmwf_eps_cf_010_vars_s7_201903*.nc', 
+                                combine='nested', concat_dim='time', preprocess=climfun.adjust_time).sel(time=slice(start_time,end_time))
+ds_ips_rebuild = climfun.preprocess_era5_dataset(ds_ips_rebuild, tprate_convert=True)
 
 # Load GPM dataset
 ds_gpm = xr.open_dataset(r'D:\paper_4\data\nasa_data\gpm_imerg_201903.nc').sel(time=slice(start_time,end_time))
 ds_gpm.coords['lon'] = (ds_gpm.coords['lon'] + 180) % 360 - 180
 ds_gpm = ds_gpm.sortby('lat', ascending=False)
 ds_gpm = ds_gpm.rename({'precipitation': 'tp'})
-
-ds_gpm_hour = ds_gpm.resample(time='1H').mean()
+ds_gpm = ds_gpm.resample(time='1H').mean() # have to do this to have the same time resolution as the other datasets
 # save ds_gpm_hour to netcdf
 # ds_gpm_hour.to_netcdf(r'D:\paper_4\data\nasa_data\gpm_imerg_201903_hourly.nc')
-
-# plot timeseries average ds_gpm and ds_gpm_hour
-ds_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm')
-ds_gpm_hour['tp'].mean(dim=['lat','lon']).plot(label='gpm_hour')
-plt.legend()
-plt.show()
 
 # Load IBTrACS dataset
 df_storm, df_storm_subset = climfun.process_ibtracs_storm_data(ibtracs_path = r'D:\paper_4\data\ibtracs\IBTrACS.since1980.v04r00.nc',
                                                   storm_id = '2019063S18038', 
-                                                  ds_time_range = ds)
+                                                  ds_time_range = ds_ens)
 ds_storm_subset_1hour = climfun.interpolate_dataframe(df_storm_subset, ['U10', 'msl', 'time', 'lat', 'lon'], 'time', '1H')
 
-# multiply tprate by 3600 to get mm/h
-ds['tp'].mean(dim=['lat','lon', 'number']).plot(label='tp')
-ds['tprate'].mean(dim=['lat','lon', 'number']).plot(label='tprate')
-ds_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm')
-ds_era5['tp'].mean(dim=['lat','lon']).plot(label='era5')
+ds_ens['tprate'].mean(dim=['lat','lon', 'number']).plot(label='IFS ensemble mean')
+ds_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm-imerg')
+ds_control['tprate'].mean(dim=['lat','lon']).plot(label='IFS control')
+ds_ips_rebuild['tprate'].mean(dim=['lat','lon']).plot(label='IFS rebuild')
+ds_era5['tp'].mean(dim=['lat','lon']).plot(label='era5', linestyle='--' )
 plt.legend()
 plt.show()
 
+# now plot tp for the Beira location
+ds_gpm['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='gpm-imerg', linestyle='-.' )
+ds_ens['tprate'].sel(lat=-19.8, lon=34.9, method='nearest').mean(dim=['number']).plot(label='IFS ensemble mean')
+ds_control['tprate'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control')
+ds_ips_rebuild['tprate'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild')
+ds_era5['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5', linestyle='--' )
+plt.legend()
+plt.show()
 
 # track storm 
-storm_track_ens = climfun.storm_tracker_mslp_ens(ds, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+storm_track_ens = climfun.storm_tracker_mslp_ens(ds_ens, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
 # track ds_era5 storm
 storm_track_era5 = climfun.storm_tracker_mslp_updated(ds_era5, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
 # track control run
 storm_track_control = climfun.storm_tracker_mslp_updated(ds_control, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
-
+# track ips rebuild
+storm_track_ips_rebuild = climfun.storm_tracker_mslp_updated(ds_ips_rebuild, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
 
 # plot storm tracks 
 climfun.plot_minimum_track(storm_track_ens)
 climfun.plot_minimum_track(storm_track_era5, df_storm_subset)
 climfun.plot_minimum_track(storm_track_control, df_storm_subset)
+climfun.plot_minimum_track(storm_track_ips_rebuild, df_storm_subset)
+
+
+# Example usage
+target_time = '2019-03-15 00:00:00' #landfall in Beira
+ds_control_shifted = shift_on_closest_time(ds_storm_subset_1hour, storm_track_control, ds_control_orig, target_time).sel(time=slice(start_time,end_time))
+
+
 
 # Calculate composite
-ds_composite_ens = climfun.storm_composite_ens(ds, storm_track_ens, radius = 2)
+ds_composite_ens = climfun.storm_composite_ens(ds_ens, storm_track_ens, radius = 2)
 ds_composite_era5 = climfun.storm_composite(ds_era5, storm_track_era5, radius = 2)
 ds_composite_control = climfun.storm_composite(ds_control, storm_track_control, radius = 2)
+ds_composite_control_shifted = climfun.storm_composite(ds_control_shifted, storm_track_control, radius = 2)
+ds_composite_ips_rebuild = climfun.storm_composite(ds_ips_rebuild, storm_track_ips_rebuild, radius = 2)
 # use the observed track to calculate the composite for gpm
-ds_composite_gpm = climfun.storm_composite(ds_gpm_hour, ds_storm_subset_1hour.to_dataframe(), radius = 2)
+ds_composite_gpm = climfun.storm_composite(ds_gpm, ds_storm_subset_1hour.to_dataframe(), radius = 2)
+
+ds_composite_gpm['tp'].mean(dim=['lat','lon']).plot(label='GPM imerg', linestyle='-.')
+ds_composite_ens['tp'].mean(dim=['lat','lon', 'number']).plot(label='IFS ensemble mean')
+ds_composite_control['tp'].mean(dim=['lat','lon']).plot(label='IFS control run')
+ds_composite_ips_rebuild['tp'].mean(dim=['lat','lon']).plot(label='IFS rebuild')
+ds_composite_era5['tp'].mean(dim=['lat','lon']).plot(label='era5', linestyle='--' )
+plt.legend()
+plt.show()
 
 # BIAS CORRECTION ##############################################################
 bc_start_date = '2019-03-14T18:00:00.000000000'
-bc_end_date = '2019-03-15T06:00:00.000000000'
-path_bc_file = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_pf_010_vars_n50_s60_20190313_bc.nc'
-# Example usage
-ds_ens_bc = bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset_1hour,
-                                 bc_start_date, bc_end_date, path_bc_file)
+bc_end_date = '2019-03-15T00:00:00.000000000'
+path_bc_file = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_pf_010_vars_n50_s48_20190314_bc.nc'
+# Execute bias correction
+# ds_ens_bc = bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset_1hour,storm_track_ens
+#                                  bc_start_date, bc_end_date, ensemble=True, output_path = path_bc_file, var = 'tp')
 
+ds_control_bc = bias_correct_dataset(ds_control_orig, ds_composite_gpm, ds_composite_control, ds_storm_subset_1hour, storm_track_control,
+                                 bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_cf_010_vars_s72_20190313_bc.nc', var = 'tp')
+
+ds_era5_bc = bias_correct_dataset(ds_era5, ds_composite_gpm, ds_composite_era5, ds_storm_subset_1hour, storm_track_era5,
+                                    bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\era5_hourly_vars_idai_single_2019_03_bc.nc', var = 'tp')
+ds_ips_rebuild_bc = bias_correct_dataset(ds_ips_rebuild, ds_composite_gpm, ds_composite_ips_rebuild, ds_storm_subset_1hour, storm_track_ips_rebuild,
+                                    bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_cf_010_vars_s7_201903_bc.nc', var = 'tp')
 # CHECK RESULTS ################################################################
 ds_composite_ens_bc = climfun.storm_composite_ens(ds_ens_bc, storm_track_ens, radius = 2)
+ds_composite_control_bc = climfun.storm_composite(ds_control_bc, storm_track_control, radius = 2)
+ds_composite_era5_bc = climfun.storm_composite(ds_era5_bc, storm_track_era5, radius = 2)
 
 # NON BIAS corrected
-climfun.plot_comp_variable_timeseries(ds_composite_ens, 'tp', ds_era5_composite=ds_composite_gpm, agg_method='mean')
 climfun.plot_comp_variable_timeseries(ds_composite_ens, 'U10', ds_era5_composite=ds_composite_era5, agg_method='max', obs_data=df_storm_subset)
 climfun.plot_comp_variable_timeseries(ds_composite_ens, 'msl', ds_era5_composite=ds_composite_era5, agg_method='min', obs_data=df_storm_subset)
+climfun.plot_comp_variable_timeseries(ds_composite_ens, 'tp', ds_era5_composite=ds_composite_gpm, agg_method='mean')
 
 # plot timeseries average for bc u10 and msl
 climfun.plot_comp_variable_timeseries(ds_composite_ens_bc, 'U10', ds_era5_composite=ds_composite_era5, agg_method='max', obs_data=df_storm_subset)
@@ -165,11 +280,40 @@ climfun.plot_comp_variable_timeseries(ds_composite_ens_bc, 'msl', ds_era5_compos
 climfun.plot_comp_variable_timeseries(ds_composite_ens_bc, 'tp', ds_era5_composite=ds_composite_gpm, agg_method='mean')
 
 # plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
-ds_composite_ens['tp'].mean(dim=['lat','lon','number']).plot(label='ensemble raw')
-ds_composite_ens_bc['tp'].mean(dim=['lat','lon','number']).plot(label='ensemble bias corrected')
+ds_composite_control['tp'].mean(dim=['lat','lon']).plot(label='ensemble raw')
+ds_composite_control_bc['tp'].mean(dim=['lat','lon']).plot(label='ensemble bias corrected')
 ds_composite_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm (ref)')
 plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
 plt.legend()
-plt.title('Mean precipitation rate over time with bias correction')
+plt.title(f'Mean precipitation rate (bc ({np.round(ds_composite_control_bc["tp"].mean().item(),2)}) vs ref({np.round(ds_composite_gpm["tp"].mean().item(),2)}))')
 plt.show()
 
+
+# plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
+ds_composite_control['U10'].max(dim=['lat','lon']).plot(label='ensemble raw')
+ds_composite_control_bc['U10'].max(dim=['lat','lon']).plot(label='ensemble bias corrected')
+ds_storm_subset_1hour['U10'].plot(label='Ibtracs (ref)')
+plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
+plt.legend()
+plt.title(f'Max wind speed (bc ({np.round(ds_composite_control_bc["U10"].max(dim=["lat","lon"]).mean().item(),2)}) vs ref({np.round(ds_storm_subset_1hour["U10"].mean().item(),2)}))')
+plt.show()
+
+
+# plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
+ds_composite_control['msl'].min(dim=['lat','lon']).plot(label='ensemble raw')
+ds_composite_control_bc['msl'].min(dim=['lat','lon']).plot(label='ensemble bias corrected')
+ds_storm_subset_1hour['msl'].plot(label='Ibtracs (ref)')
+plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
+plt.legend()
+plt.title(f'Min mslp (bc ({np.round(ds_composite_control_bc["msl"].min(dim=["lat","lon"]).mean().item(),2)}) vs ref({np.round(ds_storm_subset_1hour["msl"].mean().item(),2)}))')
+plt.show()
+
+
+# now plot tp for the Beira location
+ds_gpm['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='gpm-imerg', linestyle='-.', color = 'black' )
+ds_control_bc['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control bc')
+ds_control['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control')
+ds_ips_rebuild['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild')
+ds_era5['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5', linestyle='--' )
+plt.legend()
+plt.show()
