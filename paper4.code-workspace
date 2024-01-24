@@ -2,6 +2,9 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../FIAT_course_from_Panos"
 		}
 	],
 	"settings": {}

@@ -59,6 +59,8 @@ data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', root_fo
 list_indices_storm = ['merit_hydro','gebco', 'osm_coastlines', 'osm_landareas', 'gswo', 'fabdem', 'dtu10mdt', 'gcn250', 'vito', "rivers_lin2019_v1"]
 
 ##########################################################################################
+# optional step: create data catalog
+sfincs_scen.clip_data_to_region(bbox_beira, export_dir = f'data_deltares_test', data = ['deltares_data', data_libs[0]], list_indices = list_indices_storm)
 
 # 1) Offshore model
 sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'era5', storm = storm, data_libs = data_libs,
@@ -75,7 +77,7 @@ sfincs_scen.copy_entire_folder(rf'D:\paper_4\data\quadtree_beira_base', rf'D:\pa
 sfincs_scen.copy_two_files(rf'D:\paper_4\data\quadtree_ifs_cf_forcing_bc', rf'D:\paper_4\data\quadtree_ifs_cf_bc', 'press_2d.nc', 'wind_2d.nc')
 
 # run model and generate his (waterlevels)
-run_sfincs(base_root = r'D:\paper_4\data\quadtree_era5_max_tide', fn_exe = fn_exe)
+sfincs_scen.run_sfincs(base_root = r'D:\paper_4\data\quadtree_era5_max_tide', fn_exe = fn_exe)
 
 # 2) Onshore model
 sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'base', storm = storm, data_libs = data_libs,
@@ -87,4 +89,4 @@ sfincs_scen.update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_ro
 
 
 # run onshore model and obtain inundation
-run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
+sfincs_scen.run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm

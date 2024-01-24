@@ -15,11 +15,12 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import rasterio
 from rasterio.enums import Resampling
-
+import toml
 
 ## this is not really the fiat running part, this is to clean the data that was not working originally.
-
-tiff_file_path = r'D:\paper_4\data\vanPanos\FIAT_model_new\Hazard\flood_depth_idai.tif'
+# Paths
+tiff_file_path = r'D:\paper_4\data\vanPanos\FIAT_model_new\Hazard\test_surge_ifs_cf_bc_slr100.tiff'
+output_tiff = r'D:\paper_4\data\vanPanos\FIAT_model_new\Hazard\test_surge_ifs_cf_bc_slr100_flip.tiff'
 
 with rasterio.open(tiff_file_path) as src:
     # The transform property returns an affine transformation matrix
@@ -31,7 +32,6 @@ with rasterio.open(tiff_file_path) as src:
         print("Latitude is not in the correct order (north up).")
     else:
         print("Latitude order is correct (north up).")
-
 
 
 def flip_raster(input_path, output_path):
@@ -54,9 +54,6 @@ def flip_raster(input_path, output_path):
         with rasterio.open(output_path, 'w', **meta) as dst:
             dst.write(flipped_data)
 
-# Paths
-output_tiff = r'D:\paper_4\data\vanPanos\FIAT_model_new\Hazard\flood_depth_idai_flip.tif'
-
 # Flip the raster
 flip_raster(tiff_file_path, output_tiff)
 
@@ -76,12 +73,17 @@ from fiat.main import *
 FIAT.from_path(r"D:\paper_4\data\vanPanos\FIAT_model_new\settings.toml").run()
 
 
+config = toml.load(r"D:\paper_4\data\vanPanos\FIAT_model_new\settings.toml")
+
+# Get the 'file' key from the 'hazard' section
+scenario = config['hazard']['file'][7:-5]
+
 # 2. Read fiat output and plots
 
 #Load *.csv into dataframe
-df_exposure = pd.read_csv(r"D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip5.csv")
+df_exposure = pd.read_csv(r"D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip3.csv")
 # Load exposure geopackage into GeoDataFrame
-gdf_exposure =gpd.read_file(r"D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip2.gpkg")
+gdf_exposure =gpd.read_file(r"D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip3.gpkg")
 # Merge dataframe with GeoDataFrame
 merged_gdf = gdf_exposure.merge(df_exposure, left_on='Object ID', right_on='Object ID', how='inner')
 merged_gdf['geometry'] = merged_gdf.geometry.representative_point()
@@ -105,3 +107,22 @@ gdf_output.plot(column = 'Total Damage', legend = True)
 # add title
 plt.title(f'Total Damage {round(gdf_output["Total Damage"].sum(), 2)}')
 plt.show()
+
+# save to geopackage
+gdf_output.to_file(rf"D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_{scenario}_filter.gpkg", driver="GPKG")
+
+
+
+
+# # File paths
+# file_path = rf'D:\paper_4\data\vanPanos\qgis_data\exposure_clip3.csv'
+# output_file_path = rf'D:\paper_4\data\vanPanos\qgis_data\exposure_clip3.csv'
+
+# # Read the CSV file
+# df = pd.read_csv(file_path, dtype=str)
+
+# # Removing double quotes from "Object name" column
+# df['Object Name'] = df['Object Name'].str.replace('"', '')
+
+# # Save the DataFrame to a new CSV file
+# df.to_csv(output_file_path, index=False)

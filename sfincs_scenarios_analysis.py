@@ -21,16 +21,38 @@ import subprocess
 
 import hydromt
 from hydromt_sfincs import SfincsModel, utils
+   
+base_folder = 'D:/paper_4/data/sfincs_input/'  #'D:/paper_4/data/version006_quadtree_8km_500m_60s/'
+storm = 'test'
+data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
+# change this
+scenario = 'test_surge_ifs_cf_bc_floodwall'
 
-mod_nr = SfincsModel(r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', mode="r") #test_rain_gpm
+tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
+root_folder = rf'D:\paper_4\data\sfincs_input\{scenario}'
+
+mod_nr = SfincsModel(root_folder, data_libs = data_libs, mode="r") #test_rain_gpm
     # we can simply read the model results (sfincs_map.nc and sfincs_his.nc) using the read_results method
 mod_nr.read_results()
 # mod_nr.write_raster(f"results.hmax", compress="LZW")
 # _ = mod_nr.plot_forcing()
 
+gswo = mod_nr.data_catalog.get_rasterdataset("gswo", geom=mod_nr.region, buffer=10)
+gswo_mask = gswo.raster.reproject_like(mod_nr.grid, method="max") <= 5
+
 da_hmax = mod_nr.results["hmax"].max(['timemax'])
-da_hmax = da_hmax.where(da_hmax > 0.05)
+da_hmax = da_hmax.where(gswo_mask).where(da_hmax > 0.05)
+# update attributes for colorbar label later
+da_hmax.attrs.update(long_name="flood depth", unit="m")
+# check it's in north-up order
+if da_hmax.y.values[0] < da_hmax.y.values[-1]:
+    # Flip vertically
+    da_hmax = da_hmax[::-1, :]
+    print("Flipped the raster as it was not in north-up order.")
+else:
+    print("Raster already in north-up order, no flip needed.")
+
 fig, ax = mod_nr.plot_basemap(
     fn_out=None,
     figsize=(16, 12),
@@ -49,5 +71,4 @@ fig, ax = mod_nr.plot_basemap(
 # plt.savefig(join(mod.root, 'figs', 'hmax.png'), dpi=225, bbox_inches="tight")
 plt.show()
 
-da_hmax.rio.to_raster(rf'D:\paper_4\data\sfincs_output\test\test_surge_ifs_cf_bc.tiff', tiled=True, compress='LZW')
-
+da_hmax.rio.to_raster(tif_file, tiled=True, compress='LZW')
