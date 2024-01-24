@@ -15,34 +15,7 @@ Scripts Overview
 
     sfincs_scenarios_analysis.py and sfincs_scenarios_setup.py: These scripts are part of the SFINCS model scenario analysis and setup processes. They include imports for data manipulation and geospatial analysis but do not contain specific functions within the provided content.
 
-README Structure
-
-    Introduction: Briefly describe the purpose of the collection of scripts, mentioning their use in climate science research, data analysis, modeling, and visualization.
-
-    Requirements: List the Python version required and all external libraries used across the scripts. Mention any specific setup instructions for libraries that are not straightforward to install.
-
-    Installation: Provide steps to set up the environment necessary to run these scripts, including the installation of required Python packages via pip or conda.
-
-    Scripts Descriptions:
-        For each script, include a short description of its purpose, the main functions it provides, and any specific datasets or external services it interacts with (e.g., ECMWF API, SFINCS model).
-
-    Usage:
-        Offer examples of how to run each script or utilize its functions within a Python environment. This could include command-line examples or snippets of Python code.
-
-    Contributing:
-        If applicable, provide guidelines for how others can contribute to the development of these scripts.
-
-    License:
-        State the license under which these scripts are shared.
-
-    Contact:
-        Provide contact information for users who may have questions or need support.
-
-Now, I will proceed to draft the README file based on this structure. ​
-
-​
-README.md Draft for Climate Science Scripts Collection
-Introduction
+## Introduction
 
 This collection of Python scripts is designed for researchers and scientists working in the field of climate science. It offers a range of functionalities, from processing climate data, interacting with the ECMWF web API, running hydrological models, to generating animations for data visualization. These tools are intended to assist in analyzing, visualizing, and interpreting climate-related data and model outputs.
 Requirements
