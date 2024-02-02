@@ -486,7 +486,7 @@ if __name__ == "__main__":
     os.chdir(root_folder)
 
     # general parameters
-    res = 30
+    res = 10
     storm = 'test'
     bbox_beira = [34.8180412,-19.8658097,34.939334,-19.76172]
     grid_setup = {
@@ -503,6 +503,12 @@ if __name__ == "__main__":
         "structures": r"D:\paper_4\data\qgis\beira_seawall.geojson",
         "stype": "weir",
         "dz": 4,
+    }
+
+    exp_neighborhood_params = {
+        "Imp"
+        "structures": r"D:\paper_4\data\qgis\beira_expansion_neighborhood.geojson",
+        "stype": "weir",
     }
 
 
@@ -611,6 +617,10 @@ if __name__ == "__main__":
 
     update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_rain_gpm', 
                         data_libs = data_libs, mode = 'rain', precip_path = 'gpm_30min_idai_hourly')
+    
+    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_rain_ifs_cf_bc',
+                        data_libs = data_libs, mode = 'rain', precip_path = 'ifs_cf_ens_idai_hourly')
+    
     #TODO: now with more precipitation - embed on the function a change for CC
 
     # add adaptation options
@@ -623,7 +633,7 @@ if __name__ == "__main__":
 
     # 4) RUN ONSHORE SFINCS MODEL
     # scenario base
-    run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
+    run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_rain_ifs_cf_bc', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
     # scenario SLR
     run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_slr100', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
     # scenario base + adaptation
@@ -632,24 +642,9 @@ if __name__ == "__main__":
     run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_slr100_floodwall', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
 
 
-    # update defensive mechanisms on the model
-    sf = SfincsModel(data_libs=data_libs, root=r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc', mode="r")
-    sf.read()
-
-    # Set new root for writing
-    sf.set_root(root=r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', mode='w+')
-
-    sf.setup_structures(
-        structures=r"D:\paper_4\data\qgis\beira_seawall.geojson",
-        stype="weir",
-        dz=15,
-    )
-
-    sf.write()
-
-
     # mod_nr = generate_maps(sfincs_root = r'D:\paper_4\data\sfincs_input\test_base_surge', catalog_path = f'D:\paper_4\data\sfincs_input\test_base\hydromt_data.yml', storm = storm, scenario = 'surge', mode = 'surge')
-
+##########################################################################################
+    
     mod_nr = SfincsModel(r'D:\paper_4\data\sfincs_input\test_rain_gpm', mode="r")
     mod_nr.read_results()
 

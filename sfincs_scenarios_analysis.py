@@ -27,7 +27,7 @@ storm = 'test'
 data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
 # change this
-scenario = 'test_surge_ifs_cf_bc_floodwall'
+scenario = 'test_rain_ifs_cf_bc'
 
 tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
 root_folder = rf'D:\paper_4\data\sfincs_input\{scenario}'
