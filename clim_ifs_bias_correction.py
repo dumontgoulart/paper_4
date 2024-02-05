@@ -154,15 +154,25 @@ def create_mask(ds, center_lat, center_lon, radius):
         lon_condition = (ds.lon >= center_lon - radius) & (ds.lon <= center_lon + radius)
         return lat_condition & lon_condition
 
-def generate_boundaries(start_time, end_time, freq='6H'):
+def generate_boundaries(start_time, end_time, freq='12H'):
     # Generate a date range at 6-hour intervals
     boundaries = pd.date_range(start=start_time, end=end_time, freq=freq)
     return boundaries
 
+def adjust_time(ds):
+   
+    ds['tp'] = ds['tp'].diff(dim='time', n=1, label='lower')
+    # Select the first 5 timesteps
+    ds = ds.isel(time=slice(0, 12))
+
+    return ds
+
+
 # Load data and pararmeters
 file_path = 'D:/paper_4/data/seas5/ecmwf/ecmwf_eps_pf_010_vars_n50_s48_20190314.nc' # ecmwf_eps_pf_vars_n15_s90_20190313 / ecmwf_eps_pf_vars_n15_s90_20170907
 start_time = '2019-03-13T12:00:00.000000000'
-end_time = '2019-03-15T12:00:00.000000000'
+end_time = '2019-03-16T00:00:00.000000000'
+target_time = '2019-03-15 00:00:00' #landfall in Beira
 
 # load IFS ensemble
 ds = xr.open_dataset(file_path)
@@ -179,8 +189,8 @@ ds_era5 = xr.open_dataset(r'D:\paper_4\data\era5\era5_hourly_vars_idai_single_20
 ds_era5 = climfun.preprocess_era5_dataset(ds_era5)
 
 # try the 7 lead time rebuild forecast
-ds_ips_rebuild_orig = xr.open_mfdataset('D:\paper_4\data\seas5\ecmwf\short_forecasts\ecmwf_eps_cf_010_vars_s6_201903*.nc', 
-                                combine='nested', concat_dim='time', preprocess=climfun.adjust_time).load()
+ds_ips_rebuild_orig = xr.open_mfdataset('D:\paper_4\data\seas5\ecmwf\short_forecasts\ecmwf_oper_fc_010_vars_s15_201903*.nc', #ecmwf_eps_cf_010_vars_s10_201903*.nc
+                                combine='nested', concat_dim='time', preprocess=adjust_time).load()
 ds_ips_rebuild_orig = climfun.preprocess_era5_dataset(ds_ips_rebuild_orig, tprate_convert=True)
 # ds_ips_rebuild_orig = ds_ips_rebuild_orig.rolling(time=6, center=False).mean()
 # ds_ips_rebuild_orig = savgol_filter(ds_ips_rebuild_orig['U10'], 4,2, axis=0)
@@ -203,16 +213,8 @@ df_storm, df_storm_subset = climfun.process_ibtracs_storm_data(ibtracs_path = r'
                                                   ds_time_range = ds_control_orig)
 ds_storm_subset_1hour = climfun.interpolate_dataframe(df_storm_subset, ['U10', 'msl', 'time', 'lat', 'lon'], 'time', '1H')
 
-ds_ens['tprate'].mean(dim=['lat','lon', 'number']).plot(label='IFS ensemble mean')
-ds_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm-imerg')
-ds_control['tprate'].mean(dim=['lat','lon']).plot(label='IFS control')
-ds_ips_rebuild['tprate'].mean(dim=['lat','lon']).plot(label='IFS rebuild')
-ds_era5['tp'].mean(dim=['lat','lon']).plot(label='era5', linestyle='--' )
-plt.legend()
-plt.show()
-
-
-# track storm 
+# track all the storms using the storm tracker
+# track storm ensemble
 storm_track_ens = climfun.storm_tracker_mslp_ens(ds_ens, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
 # track ds_era5 storm
 storm_track_era5 = climfun.storm_tracker_mslp_updated(ds_era5, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
@@ -229,10 +231,12 @@ climfun.plot_minimum_track(storm_track_ips_rebuild, df_storm_subset)
 
 
 # Shift control and ips_rebuild datasets to match the storm track (important for bias correction)
-target_time = '2019-03-15 00:00:00' #landfall in Beira
+
 ds_control_shifted = shift_on_closest_time(ds_storm_subset_1hour, storm_track_control, ds_control_orig, target_time).sel(time=slice(start_time,end_time))
-ds_ips_rebuild_shifted = shift_on_closest_time(ds_storm_subset_1hour, storm_track_ips_rebuild, ds_ips_rebuild_orig, target_time).sel(time=slice(start_time,end_time))
 storm_track_control_shifted = climfun.storm_tracker_mslp_updated(ds_control_shifted, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
+
+ds_ips_rebuild_orig_shifted = shift_on_closest_time(ds_storm_subset_1hour, storm_track_ips_rebuild, ds_ips_rebuild_orig, target_time)
+ds_ips_rebuild_shifted = ds_ips_rebuild_orig_shifted.sel(time=slice(start_time,end_time))
 storm_track_ips_rebuild_shifted = climfun.storm_tracker_mslp_updated(ds_ips_rebuild_shifted, df_storm, smooth_step='savgol', large_box=3, small_box=1.5)
 
 # Calculate composite
@@ -254,6 +258,7 @@ if plot_figures == True:
     ds_composite_era5['tp'].mean(dim=['lat','lon']).plot(label='era5', linestyle='--' )
     ds_composite_ens['tp'].mean(dim=['lat','lon', 'number']).plot(label='IFS ensemble mean')
     ds_composite_control['tp'].mean(dim=['lat','lon']).plot(label='IFS control run')
+    ds_composite_control_shifted['tp'].mean(dim=['lat','lon']).plot(label='IFS control run shifted', linestyle='--')
     ds_composite_ips_rebuild['tp'].mean(dim=['lat','lon']).plot(label='IFS rebuild', color = 'black')
     ds_composite_ips_rebuild_shifted['tp'].mean(dim=['lat','lon']).plot(label='IFS rebuild shifted', color = 'red')
     plt.legend()
@@ -262,6 +267,7 @@ if plot_figures == True:
     # crea figure and plot mslp for the storm
     fig = plt.figure(figsize=(10, 10))
     ds_composite_control['msl'].min(dim=['lat','lon']).plot(label='IFS control run')
+    ds_composite_control_shifted['msl'].min(dim=['lat','lon']).plot(label='IFS control run shifted', linestyle='--')
     ds_composite_era5['msl'].min(dim=['lat','lon']).plot(label='era5', linestyle='--' )
     ds_composite_ips_rebuild['msl'].min(dim=['lat','lon']).plot(label='IFS rebuild', color = 'black')
     ds_composite_ips_rebuild_shifted['msl'].min(dim=['lat','lon']).plot(label='IFS rebuild shifted', color = 'red')
@@ -278,6 +284,7 @@ if plot_figures == True:
     # crea figure and plot mslp for the storm
     fig = plt.figure(figsize=(10, 10))
     ds_composite_control['U10'].max(dim=['lat','lon']).plot(label='IFS control run')
+    ds_composite_control_shifted['U10'].max(dim=['lat','lon']).plot(label='IFS control run shifted', linestyle='--')
     ds_composite_era5['U10'].max(dim=['lat','lon']).plot(label='era5', linestyle='--' )
     ds_composite_ips_rebuild['U10'].max(dim=['lat','lon']).plot(label='IFS rebuild', color = 'black')
     ds_composite_ips_rebuild_shifted['U10'].max(dim=['lat','lon']).plot(label='IFS rebuild shifted', color = 'red')
@@ -293,12 +300,12 @@ if plot_figures == True:
     fig = plt.figure(figsize=(10, 10))
     ds_composite_control['msl'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control run')
     ds_composite_era5['msl'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5', linestyle='--' )
-    ds_composite_ips_rebuild['msl'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild', color = 'black')
+    ds_composite_ips_rebuild_shifted['msl'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild', color = 'black')
     plt.legend()
     plt.show()
 
     fig = plt.figure(figsize=(10, 10))
-    ds_composite_control['U10'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control run')
+    ds_composite_control_shifted['U10'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control run')
     ds_composite_era5['U10'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5', linestyle='--' )
     ds_composite_ips_rebuild['U10'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild', color = 'black')
     plt.legend()
@@ -306,9 +313,10 @@ if plot_figures == True:
     
     fig = plt.figure(figsize=(10, 10))
     ds_composite_control['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control run')
-    ds_composite_era5['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5', linestyle='--' )
+    ds_composite_control_shifted['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control run shifted', linestyle='--')
+    ds_composite_era5['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='era5')
     ds_composite_ips_rebuild['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild', color = 'black')
-    ds_composite_ips_rebuild_shifted['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild shifted', color = 'red')
+    ds_composite_ips_rebuild_shifted['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild shifted', color = 'red', linestyle='--' )
     ds_composite_gpm['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='GPM imerg', linestyle='-.', linewidth=3)
     plt.legend()
     plt.show()
@@ -317,7 +325,7 @@ if plot_figures == True:
 
 # BIAS CORRECTION ##############################################################
 bc_start_date = '2019-03-14T18:00:00.000000000'
-bc_end_date = '2019-03-15T00:00:00.000000000'
+bc_end_date = '2019-03-15T03:00:00.000000000'
 path_bc_file = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_pf_010_vars_n50_s48_20190314_bc.nc'
 # Execute bias correction
 # ds_ens_bc = bias_correct_dataset(ds, ds_composite_gpm, ds_composite_ens, ds_storm_subset_1hour,storm_track_ens
@@ -329,11 +337,12 @@ ds_control_shifted_bc = bias_correct_dataset(ds_control_shifted, ds_composite_gp
                                     bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_cf_010_vars_s72_20190313_shifted_bc.nc', var = 'tp')
 ds_era5_bc = bias_correct_dataset(ds_era5, ds_composite_gpm, ds_composite_era5, ds_storm_subset_1hour, storm_track_era5,
                                     bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\era5_hourly_vars_idai_single_2019_03_bc.nc', var = 'tp')
-ds_ips_rebuild_bc = bias_correct_dataset(ds_ips_rebuild_shifted, ds_composite_gpm, ds_composite_ips_rebuild_shifted, ds_storm_subset_1hour, storm_track_ips_rebuild_shifted,
-                                    bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_eps_cf_010_vars_s6_201903_bc.nc', var = 'tp')
+ds_ips_rebuild_bc = bias_correct_dataset(ds_ips_rebuild_orig_shifted, ds_composite_gpm, ds_composite_ips_rebuild_shifted, ds_storm_subset_1hour, storm_track_ips_rebuild_shifted,
+                                    bc_start_date, bc_end_date, ensemble= False, output_path = r'D:\paper_4\data\seas5\bias_corrected\ecmwf_oper_fc_rebuild_bc.nc', var = 'tp')
 # CHECK RESULTS ################################################################
 # ds_composite_ens_bc = climfun.storm_composite_ens(ds_ens_bc, storm_track_ens, radius = 2)
 ds_composite_control_bc = climfun.storm_composite(ds_control_bc, storm_track_control, radius = 2)
+ds_composite_control_shifted_bc = climfun.storm_composite(ds_control_shifted_bc, storm_track_control_shifted, radius = 2)
 ds_composite_era5_bc = climfun.storm_composite(ds_era5_bc, storm_track_era5, radius = 2)
 ds_composite_ips_rebuild_bc = climfun.storm_composite(ds_ips_rebuild_bc, storm_track_ips_rebuild_shifted, radius = 2)
 
@@ -348,8 +357,8 @@ climfun.plot_comp_variable_timeseries(ds_composite_ens_bc, 'msl', ds_era5_compos
 climfun.plot_comp_variable_timeseries(ds_composite_ens_bc, 'tp', ds_era5_composite=ds_composite_gpm, agg_method='mean')
 
 # plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
-ds_composite_control['tp'].mean(dim=['lat','lon']).plot(label='ensemble raw')
-ds_composite_control_bc['tp'].mean(dim=['lat','lon']).plot(label='ensemble bias corrected')
+ds_composite_control['tp'].mean(dim=['lat','lon']).plot(label='control')
+ds_composite_control_shifted_bc['tp'].mean(dim=['lat','lon']).plot(label='shifted bias corrected')
 ds_composite_ips_rebuild_bc['tp'].mean(dim=['lat','lon']).plot(label='rebuild bias corrected')
 ds_composite_gpm['tp'].mean(dim=['lat','lon']).plot(label='gpm (ref)', linestyle='-.', color = 'black', linewidth=3)
 plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
@@ -360,7 +369,7 @@ plt.show()
 
 # plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
 ds_composite_control['U10'].max(dim=['lat','lon']).plot(label='ensemble raw')
-ds_composite_control_bc['U10'].max(dim=['lat','lon']).plot(label='ensemble bias corrected')
+ds_composite_control_shifted_bc['U10'].max(dim=['lat','lon']).plot(label='ensemble bias corrected')
 ds_composite_ips_rebuild_bc['U10'].max(dim=['lat','lon']).plot(label='rebuild bias corrected')
 ds_storm_subset_1hour['U10'].plot(label='Ibtracs (ref)')
 plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
@@ -371,7 +380,7 @@ plt.show()
 
 # plot ds_composite_ens_bc and ds_composite_gpm and ds_composite_ens
 ds_composite_control['msl'].min(dim=['lat','lon']).plot(label='ensemble raw')
-ds_composite_control_bc['msl'].min(dim=['lat','lon']).plot(label='ensemble bias corrected')
+ds_composite_control_shifted_bc['msl'].min(dim=['lat','lon']).plot(label='ensemble bias corrected')
 ds_composite_ips_rebuild_bc['msl'].min(dim=['lat','lon']).plot(label='rebuild bias corrected')
 ds_storm_subset_1hour['msl'].plot(label='Ibtracs (ref)')
 plt.axvspan(bc_start_date, bc_end_date, color='grey', alpha=0.2)
@@ -382,7 +391,7 @@ plt.show()
 
 # now plot tp for the Beira location
 ds_gpm['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='gpm-imerg', linestyle='-.', color = 'black', linewidth=3)
-ds_control_bc['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control bc')
+ds_control_shifted_bc['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control bc')
 ds_control['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS control')
 ds_ips_rebuild['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild', color = 'red')
 ds_ips_rebuild_bc['tp'].sel(lat=-19.8, lon=34.9, method='nearest').plot(label='IFS rebuild bc', linestyle='--', color = 'red', linewidth=3)
@@ -402,3 +411,6 @@ plt.legend()
 plt.show()
 
 #TODO: add region figure to help understand how it is being corrected.
+
+# use xarray to open this file: D:\paper_4\data\quadtree_ifs_rebuild_idai_bc\press_2d.nc
+test = xr.open_dataset(r'D:\paper_4\data\quadtree_ifs_rebuild_idai_bc\press_2d.nc').close()

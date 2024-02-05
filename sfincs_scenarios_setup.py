@@ -63,18 +63,16 @@ list_indices_storm = ['merit_hydro','gebco', 'osm_coastlines', 'osm_landareas', 
 sfincs_scen.clip_data_to_region(bbox_beira, export_dir = f'data_deltares_test', data = ['deltares_data', data_libs[0]], list_indices = list_indices_storm)
 
 # 1) Offshore model
-sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'era5', storm = storm, data_libs = data_libs,
-                         bbox = None, grid_setup = grid_setup, topo_map = 'beira_dem', res = res,
-                         tref = tref_off, tstart = tstart_off, tstop = tstop_off)
+# historical
+setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='', storm=storm, 
+                        data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off, 
+                        tstart_off=tstart_off, tstop_off=tstop_off, forcing_catalog=f'{sim_name}_hourly')
 
+# high tide
+setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='_hightide', storm=storm, 
+                        data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off_hightide, 
+                        tstart_off=tstart_off_hightide, tstop_off=tstop_off_hightide, forcing_catalog=f'{sim_name}_hightide_hourly')
 
-sfincs_scen.generate_forcing(grid_setup, root_folder,'base', r'D:\paper_4\data\quadtree_ifs_cf_forcing_bc',
-                 data_libs, tref_off, tstart_off, tstop_off, forcing_catalog = 'ifs_cf_ens_idai_hourly',
-                 forcings=['wind', 'pressure'])
-
-# copy the folders and external forcings
-sfincs_scen.copy_entire_folder(rf'D:\paper_4\data\quadtree_beira_base', rf'D:\paper_4\data\quadtree_ifs_cf_forcing_bc')
-sfincs_scen.copy_two_files(rf'D:\paper_4\data\quadtree_ifs_cf_forcing_bc', rf'D:\paper_4\data\quadtree_ifs_cf_bc', 'press_2d.nc', 'wind_2d.nc')
 
 # run model and generate his (waterlevels)
 sfincs_scen.run_sfincs(base_root = r'D:\paper_4\data\quadtree_era5_max_tide', fn_exe = fn_exe)

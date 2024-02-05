@@ -21,18 +21,17 @@ import subprocess
 
 import hydromt
 from hydromt_sfincs import SfincsModel, utils
-   
+
+#general params   
 base_folder = 'D:/paper_4/data/sfincs_input/'  #'D:/paper_4/data/version006_quadtree_8km_500m_60s/'
-storm = 'test'
+storm = 'idai'
 data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
-# change this
-scenario = 'test_rain_ifs_cf_bc'
-
+# choose scenario
+scenario = 'snellius_idai_ifs_rebuild_bc_3c_rain_surge' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
 tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
-root_folder = rf'D:\paper_4\data\sfincs_input\{scenario}'
 
-mod_nr = SfincsModel(root_folder, data_libs = data_libs, mode="r") #test_rain_gpm
+mod_nr = SfincsModel(base_folder+scenario, data_libs = data_libs, mode="r") #test_rain_gpm
     # we can simply read the model results (sfincs_map.nc and sfincs_his.nc) using the read_results method
 mod_nr.read_results()
 # mod_nr.write_raster(f"results.hmax", compress="LZW")
