@@ -570,7 +570,7 @@ if __name__ == "__main__":
         "epsg": 32736,}
 
     # general parameters
-    res = 20
+    res = 5
     storm = 'idai'
     sim_name = 'ifs_rebuild_bc'
     
@@ -594,14 +594,14 @@ if __name__ == "__main__":
     tstart_hightide = add_hours_to_time(tstart, hours_shifted) # '20190308 070000' # Keep 20190301 000000 for offshore model - it
     tstop_hightide = add_hours_to_time(tstop, hours_shifted) #'20190310 070000' # Keep 20190317 120000 for offshore model - it
 
-    floodwall_params = {
+    hold_params = {
         "structures": r"D:\paper_4\data\qgis\beira_seawall.geojson",
         "stype": "weir",
-        "dz": 4,
+        "dz": 2,
     }
 
-    inner_dike_params = {
-        "structures": r"D:\paper_4\data\qgis\beira_inner_dike.geojson",
+    retreat_params = {
+        "structures": r"D:\paper_4\data\qgis\beira_internal_seawall.geojson",
         "stype": "weir",
         "dz": 2,
     }
@@ -660,7 +660,7 @@ if __name__ == "__main__":
                                 f'{sim_name}_tp_3c_hourly', f'd:/paper_4/data/seas5/bias_corrected/ecmwf_oper_fc_rebuild_bc_tp_3c.nc')
     
     data_catalog_edit(rf'd:\paper_4\data\data_catalogs\data_catalog_converter.yml', 'ifs_ens_hourly_test',
-                                f'{sim_name}_tp_3c_hightide_hourly', f'd:/paper_4/data/seas5/bias_corrected/ecmwf_oper_fc_rebuild_bc_tp_3c_hightide.nc')
+                                f'{sim_name}_tp_3c-hightide_hourly', f'd:/paper_4/data/seas5/bias_corrected/ecmwf_oper_fc_rebuild_bc_tp_3c_hightide.nc')
     
 
     ################################################################################
@@ -732,57 +732,63 @@ if __name__ == "__main__":
 
     # 3b) Use storm surge on ONSHORE SFINCS models
     # if we want hazard analysis, use single hazard:
-    # surge bc
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_surge', 
-                        data_libs = data_libs, mode = 'surge', 
-                        waterlevel_path = rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc")
-    # rain bc
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_rain',
-                        data_libs = data_libs, mode = 'rain', 
-                        precip_path = f'{sim_name}_hourly')
+    # # surge bc
+    # update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_surge', 
+    #                     data_libs = data_libs, mode = 'surge', 
+    #                     waterlevel_path = rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc")
+    # # rain bc
+    # update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_rain',
+    #                     data_libs = data_libs, mode = 'rain', 
+    #                     precip_path = f'{sim_name}_hourly')
     
     
     # compound simulations
     # compound: surge + rain
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_rain_surge',
+    slr_level = 0.64
+    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_hist_rain_surge_noadpt',
                         data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_hourly',
                         waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc")
     
     # high tide scenario
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base_hightide', new_root = f'{root_folder}{storm}_{sim_name}_hightide_rain_surge',
+    update_sfincs_model(base_root = f'{root_folder}{storm}_base_hightide', new_root = f'{root_folder}{storm}_{sim_name}_hightide_rain_surge_noadpt',
                         data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_hightide_hourly',
                         waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}_hightide/sfincs_his.nc")
 
     # now with slr = 1 + storm surge
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_3c_rain_surge',
+    update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_3c_rain_surge_noadpt',
                         data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_tp_3c_hourly',
-                        waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc", slr=1)
+                        waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc", slr=slr_level)
     
     # high tide scenario + slr100 + 3c
-    update_sfincs_model(base_root = f'{root_folder}{storm}_base_hightide', new_root = f'{root_folder}{storm}_{sim_name}_3c_hightide_rain_surge',
-                        data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_tp_3c_hightide_hourly',
-                        waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}_hightide/sfincs_his.nc", slr=1)
+    update_sfincs_model(base_root = f'{root_folder}{storm}_base_hightide', new_root = f'{root_folder}{storm}_{sim_name}_3c-hightide_rain_surge_noadpt',
+                        data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_tp_3c-hightide_hourly',
+                        waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}_hightide/sfincs_his.nc", slr=slr_level)
     
     # add adaptation options
-    
-    add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_rain_surge",
-                            new_root=rf"{root_folder}{storm}_{sim_name}_rain_surge_floodwall", structures_params=floodwall_params)
-    
-    add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_hightide_rain_surge",
-                            new_root=rf"{root_folder}{storm}_{sim_name}_hightide_rain_surge_floodwall", structures_params=floodwall_params)
-    
-    add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_3c_rain_surge",
-                            new_root=rf"{root_folder}{storm}_{sim_name}_3c_rain_surge_floodwall", structures_params=floodwall_params)
-    
-    add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_3c_hightide_rain_surge",
-                            new_root=rf"{root_folder}{storm}_{sim_name}_3c_hightide_rain_surge_floodwall", structures_params=floodwall_params)
+    for measure in ['hold', 'retreat']:
+        adapt_params = hold_params if measure == 'hold' else retreat_params
+
+        add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_hist_rain_surge_noadpt",
+                                new_root=rf"{root_folder}{storm}_{sim_name}_rain_surge_{measure}", structures_params=adapt_params)
+        
+        add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_hightide_rain_surge_noadpt",
+                                new_root=rf"{root_folder}{storm}_{sim_name}_hightide_rain_surge_{measure}", structures_params=adapt_params)
+        
+        add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_3c_rain_surge_noadpt",
+                                new_root=rf"{root_folder}{storm}_{sim_name}_3c_rain_surge_{measure}", structures_params=adapt_params)
+        
+        add_adaptation_measures(data_libs=data_libs, original_root=rf"{root_folder}{storm}_{sim_name}_3c-hightide_rain_surge_noadpt",
+                                new_root=rf"{root_folder}{storm}_{sim_name}_3c-hightide_rain_surge_{measure}", structures_params=adapt_params)
+                            
+
+                            
     
 
     # 4) RUN ONSHORE SFINCS MODEL
     # Baseline simulations
     run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_surge', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
     run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_rain', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
-    run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_rain_surge', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
+    run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_hist_rain_surge', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
     
     # high tide scenario
     run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_hightide_rain_surge', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm

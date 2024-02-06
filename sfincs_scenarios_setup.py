@@ -24,67 +24,147 @@ import sfincs_scenario_functions as sfincs_scen
 
 ##########################################################################################
 # GENERATE HYDROMT CONFIG FILE
-fn_exe = r"D:\paper_4\data\sfincs_model\SFINCS_v2.0.3_Cauberg_release_exe\sfincs.exe"
-root_folder = 'D:/paper_4/data/sfincs_input/'  #'D:/paper_4/data/version006_quadtree_8km_500m_60s/'
-output_folder = rf'{root_folder}ini_test'
-os.chdir(root_folder)
+if __name__ == "__main__":
+    # GENERATE HYDROMT CONFIG FILE
+    fn_exe = r"D:\paper_4\data\sfincs_model\SFINCS_v2.0.3_Cauberg_release_exe\sfincs.exe"
+    root_folder = 'D:/paper_4/data/sfincs_input/'  #'D:/paper_4/data/version006_quadtree_8km_500m_60s/'
+    os.chdir(root_folder)
 
-# general parameters
-res = 30
-storm = 'idai'
-bbox_beira = [34.8180412,-19.8658097,34.939334,-19.76172]
-grid_setup = {
-    "x0": 794069.0,
-    "y0": 7416897.0,
-    "dx": 8000.0,
-    "dy": 8000.0,
-    "nmax": 77,
-    "mmax": 112,
-    "rotation": 55,
-    "epsg": 32736,}
+    # grid setup    
+    bbox_beira = [34.8180412,-19.8658097,34.939334,-19.76172]
+    grid_setup = {
+        "x0": 794069.0,
+        "y0": 7416897.0,
+        "dx": 8000.0,
+        "dy": 8000.0,
+        "nmax": 77,
+        "mmax": 112,
+        "rotation": 55,
+        "epsg": 32736,}
 
-# offshore simulation dates
-tref_off = '20190301 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstart_off = '20190313 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstop_off = '20190317 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
-hours_shifted = -137 # hour for peak tide
+    # general parameters ###
+    res = 5
+    storm = 'idai'
+    sim_name = 'ifs_rebuild_bc'
 
-# onshore simulation dates
-tref = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstart = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
-tstop = '20190316 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
+    # climate parameters ###
+    slr_level = 0.64 # meters
+    degrees_projection = 3 # celsius degrees
+    hours_shifted = -137 # difference in hours for peak tide in Beira - hightide scenario
 
-# libraries
-data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', root_folder+f'data_deltares_{storm}/data_catalog.yml']
-list_indices_storm = ['merit_hydro','gebco', 'osm_coastlines', 'osm_landareas', 'gswo', 'fabdem', 'dtu10mdt', 'gcn250', 'vito', "rivers_lin2019_v1"]
+    # offshore simulation dates
+    tref_off = '20190301 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+    tstart_off = '20190313 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+    tstop_off = '20190317 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
 
-##########################################################################################
-# optional step: create data catalog
-sfincs_scen.clip_data_to_region(bbox_beira, export_dir = f'data_deltares_test', data = ['deltares_data', data_libs[0]], list_indices = list_indices_storm)
+    # offshor simulation dates for the high tide
+    tref_off_hightide = tref_off #'20190301 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+    tstart_off_hightide = sfincs_scen.add_hours_to_time(tstart_off, hours_shifted)#'20190307 070000'
+    tstop_off_hightide = sfincs_scen.add_hours_to_time(tstop_off, hours_shifted) #'20190311 070000'
 
-# 1) Offshore model
-# historical
-setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='', storm=storm, 
-                        data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off, 
-                        tstart_off=tstart_off, tstop_off=tstop_off, forcing_catalog=f'{sim_name}_hourly')
+    # onshore simulation dates
+    tref = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+    tstart = '20190314 000000' # Keep 20190301 000000 for offshore model - it doesn't work with other dates
+    tstop = '20190316 000000' # Keep 20190317 120000 for offshore model - it doesn't work with other dates
 
-# high tide
-setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='_hightide', storm=storm, 
-                        data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off_hightide, 
-                        tstart_off=tstart_off_hightide, tstop_off=tstop_off_hightide, forcing_catalog=f'{sim_name}_hightide_hourly')
+    tref_hightide = sfincs_scen.add_hours_to_time(tref, hours_shifted) #'20190308 070000' # Keep 20190301 000000 for offshore model - it
+    tstart_hightide = sfincs_scen.add_hours_to_time(tstart, hours_shifted) # '20190308 070000' # Keep 20190301 000000 for offshore model - it
+    tstop_hightide = sfincs_scen.add_hours_to_time(tstop, hours_shifted) #'20190310 070000' # Keep 20190317 120000 for offshore model - it
+
+    # adaptation scenarios
+    hold_params = {
+        "structures": r"D:\paper_4\data\qgis\beira_seawall.geojson",
+        "stype": "weir",
+        "dz": 2,
+    }
+
+    retreat_params = {
+        "structures": r"D:\paper_4\data\qgis\beira_internal_seawall.geojson",
+        "stype": "weir",
+        "dz": 2,
+    }
+
+    # libraries
+    data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', root_folder+f'data_deltares_{storm}/data_catalog.yml']
+    list_indices_storm = ['merit_hydro','gebco', 'osm_coastlines', 'osm_landareas', 'gswo', 'fabdem', 'dtu10mdt', 'gcn250', 'vito', "rivers_lin2019_v1"]
+
+    ##########################################################################################
+    # optional step: create data catalog
+    # sfincs_scen.clip_data_to_region(bbox_beira, export_dir = f'data_deltares_test', data = ['deltares_data', data_libs[0]], list_indices = list_indices_storm)
+
+    # 1) Offshore model
+    # historical
+    sfincs_scen.setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='', storm=storm, 
+                            data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off, 
+                            tstart_off=tstart_off, tstop_off=tstop_off, forcing_catalog=f'{sim_name}_hourly')
+
+    # high tide
+    sfincs_scen.setup_ofshore_sfincs_model(root_folder=root_folder, sim_name=sim_name, base_name='_hightide', storm=storm, 
+                            data_libs=data_libs, grid_setup=grid_setup, tref_off=tref_off_hightide, 
+                            tstart_off=tstart_off_hightide, tstop_off=tstop_off_hightide, forcing_catalog=f'{sim_name}_hightide_hourly')
 
 
-# run model and generate his (waterlevels)
-sfincs_scen.run_sfincs(base_root = r'D:\paper_4\data\quadtree_era5_max_tide', fn_exe = fn_exe)
+    # # # 2) RUN OFFSHORE SFINCS MODEL 
+    # sfincs_scen.run_sfincs(base_root = f'D:\paper_4\data\sfincs_input\quadtree_{sim_name}', fn_exe = fn_exe)
 
-# 2) Onshore model
-sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'base', storm = storm, data_libs = data_libs,
-                         bbox = bbox_beira, topo_map = 'beira_dem', res = res,
-                         tref = tref, tstart = tstart, tstop = tstop)
+    # # Run offshore sfincs model with max tide
+    # sfincs_scen.run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\quadtree_{sim_name}_hightide', fn_exe = fn_exe)
 
-sfincs_scen.update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_surge_ifs_cf_bc', 
-                    data_libs = data_libs, mode = 'surge', waterlevel_path = r"D:/paper_4/data/quadtree_ifs_cf_bc/sfincs_his.nc")
+    ##########################################################################################
+    # 2) Onshore model
+    sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'base', storm = storm, data_libs = data_libs,
+                            bbox = bbox_beira, topo_map = 'beira_dem', res = res,
+                            tref = tref, tstart = tstart, tstop = tstop)
+    
+    # create base for hightide
+    sfincs_scen.create_sfincs_base_model(root_folder = root_folder, scenario = 'base_hightide', storm = storm, data_libs = data_libs,
+                            bbox = bbox_beira, topo_map = 'beira_dem', res = res,
+                            tref = tref_hightide, tstart = tstart_hightide, tstop = tstop_hightide)  
 
+# Define physical and adaptation scenarios
+physical_scenarios = {
+    "hist_rain_surge": {
+        "base_root_suffix": "base",
+        "scenario_root_suffix": f"{sim_name}_hist_rain_surge_noadapt",
+        "precip_path_suffix": "hourly",
+        "waterlevel_path_folder": ""
+    },
+    "3c_rain_surge": {
+        "base_root_suffix": "base",
+        "scenario_root_suffix": f"{sim_name}_3c_rain_surge_noadapt",
+        "precip_path_suffix": "tp_3c_hourly",
+        "waterlevel_path_folder": "",
+        "slr": slr_level
+    },
+    "hightide_rain_surge": {
+        "base_root_suffix": "base_hightide",
+        "scenario_root_suffix": f"{sim_name}_hightide_rain_surge_noadapt",
+        "precip_path_suffix": "hightide_hourly",
+        "waterlevel_path_folder": "_hightide"
+    },
+    "3c-hightide_rain_surge": {
+        "base_root_suffix": "base_hightide",
+        "scenario_root_suffix": f"{sim_name}_3c-hightide_rain_surge_noadapt",
+        "precip_path_suffix": "tp_3c-hightide_hourly",
+        "waterlevel_path_folder": "_hightide",
+        "slr": slr_level
+    }
+}
 
-# run onshore model and obtain inundation
-sfincs_scen.run_sfincs(base_root = r'D:\paper_4\data\sfincs_input\test_surge_ifs_cf_bc_floodwall', fn_exe = fn_exe) # test_slr100_surge # test_rain_gpm
+for scenario_name, scenario_config in physical_scenarios.items():
+    scenario_root=f'{root_folder}{storm}_{scenario_config["scenario_root_suffix"]}'
+    print(f'Creating scenario: {scenario_name}')
+    sfincs_scen.update_sfincs_model(base_root=f'{root_folder}{storm}_{scenario_config["base_root_suffix"]}',
+                                    new_root = scenario_root, data_libs=data_libs, mode='rain_surge',
+                                    precip_path=f'{sim_name}_{scenario_config["precip_path_suffix"]}',
+                                    waterlevel_path=rf'D:/paper_4/data/sfincs_input/quadtree_{sim_name}{scenario_config["waterlevel_path_folder"]}/sfincs_his.nc',
+                                    slr=scenario_config.get("slr"))
+    
+    for measure in ['hold', 'retreat']:
+            adapt_root = scenario_root.replace("_noadapt", f"_{measure}")
+            adapt_params = hold_params if measure == 'hold' else retreat_params
+            # add adaptation measures
+            sfincs_scen.add_adaptation_measures(data_libs=data_libs, 
+                                                original_root=scenario_root,
+                                                new_root=adapt_root, structures_params=adapt_params)
+
