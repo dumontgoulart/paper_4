@@ -28,7 +28,7 @@ storm = 'idai'
 data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
 # choose scenario
-scenario = 'idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
+scenario = 'idai_ifs_rebuild_bc_3c-hightide_rain_surge_hold' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
 tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
 
 mod_nr = SfincsModel(base_folder+scenario, data_libs = data_libs, mode="r") #test_rain_gpm

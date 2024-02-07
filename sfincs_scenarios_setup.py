@@ -43,13 +43,13 @@ if __name__ == "__main__":
         "epsg": 32736,}
 
     # general parameters ###
-    res = 20
+    res = 5
     storm = 'idai'
     sim_name = 'ifs_rebuild_bc'
 
     # climate parameters ###
     slr_level = 0.64 # meters
-    degrees_projection = 3 # celsius degrees
+    degrees_projection = 3 - 1.2 # check # celsius degrees
     hours_shifted = -137 # difference in hours for peak tide in Beira - hightide scenario
 
     # offshore simulation dates
