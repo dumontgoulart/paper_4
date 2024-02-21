@@ -28,7 +28,7 @@ storm = 'idai'
 data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
 # choose scenario
-scenario = 'idai_ifs_rebuild_bc_3c-hightide_rain_surge_hold' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
+scenario = 'idai_ifs_rebuild_bc_3c-hightide_rain_surge_retreat' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
 tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
 
 mod_nr = SfincsModel(base_folder+scenario, data_libs = data_libs, mode="r") #test_rain_gpm
@@ -36,12 +36,12 @@ mod_nr = SfincsModel(base_folder+scenario, data_libs = data_libs, mode="r") #tes
 mod_nr.read_results()
 # mod_nr.write_raster(f"results.hmax", compress="LZW")
 # _ = mod_nr.plot_forcing()
-
-gswo = mod_nr.data_catalog.get_rasterdataset("gswo", geom=mod_nr.region, buffer=10)
-gswo_mask = gswo.raster.reproject_like(mod_nr.grid, method="max") <= 5
+landmask = mod_nr.data_catalog.get_geodataframe(f"D:\paper_4\data\sfincs_input\data_deltares_idai\osm_landareas.gpkg")
 
 da_hmax = mod_nr.results["hmax"].max(['timemax'])
-da_hmax = da_hmax.where(gswo_mask).where(da_hmax > 0.05)
+mask = da_hmax.raster.geometry_mask(landmask)
+da_hmax = da_hmax.where(da_hmax > 0.05).where(mask)
+
 # update attributes for colorbar label later
 da_hmax.attrs.update(long_name="flood depth", unit="m")
 # check it's in north-up order

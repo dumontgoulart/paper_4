@@ -640,7 +640,7 @@ if __name__ == "__main__":
                                         hours_shifted)  
     
     # Increase in precpitation due to clausius claperyon relation of 7% per degree
-    degrees_projection = 3
+    degrees_projection = 3 - 1.1 #3c - t at 2019
     scaled_precip_data = scale_precip_in_netcdf("d:/paper_4/data/seas5/bias_corrected/ecmwf_oper_fc_rebuild_bc.nc",
                                                 "d:/paper_4/data/seas5/bias_corrected/ecmwf_oper_fc_rebuild_bc_tp_3c.nc",
                                                 1 + (0.07 * degrees_projection))
@@ -744,7 +744,7 @@ if __name__ == "__main__":
     
     # compound simulations
     # compound: surge + rain
-    slr_level = 0.64
+    slr_level = 0.64 - 3.6*0.1*(2019-2005) # 3.6mm/year IPCC *0.1cm/mm * time difference
     update_sfincs_model(base_root = f'{root_folder}{storm}_base', new_root = f'{root_folder}{storm}_{sim_name}_hist_rain_surge_noadpt',
                         data_libs = data_libs, mode = 'rain_surge', precip_path = f'{sim_name}_hourly',
                         waterlevel_path =  rf"D:/paper_4/data/sfincs_input/quadtree_{sim_name}/sfincs_his.nc")

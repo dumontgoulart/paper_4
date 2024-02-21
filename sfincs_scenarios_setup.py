@@ -48,7 +48,7 @@ if __name__ == "__main__":
     sim_name = 'ifs_rebuild_bc'
 
     # climate parameters ###
-    slr_level = 0.64 # meters
+    slr_level = 0.64 - 3.6*(2019-2005)*0.001 # 3.6mm/year IPCC *0.1cm/mm * time difference# meters
     degrees_projection = 3 - 1.2 # check # celsius degrees
     hours_shifted = -137 # difference in hours for peak tide in Beira - hightide scenario
 
