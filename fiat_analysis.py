@@ -117,7 +117,7 @@ for i, adapt in enumerate(adapt_order):
 # Formatting the plot
 ax.set_xlabel('Climate Scenario')
 ax.set_ylabel('Total Damage [$]')
-ax.set_title('Total Damage of Idai storylines in Beira', fontsize=14, fontweight='bold', loc='left')
+ax.set_title('Total Damage of Idai storylines in Beira', fontsize=17, fontweight='medium', loc='left')
 ax.set_xticks(positions)
 ax.set_xticklabels(climate_scenarios)
 ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.8, 1.1), ncol=3, fontsize=12)
@@ -168,7 +168,7 @@ for i, adapt in enumerate(adapt_order[1:3]):
 # Formatting the plot
 ax.set_xlabel('Climate Scenario')
 ax.set_ylabel('Damage change (%)')
-ax.set_title('Damage wrt No Adaptation', fontsize=14, fontweight='bold', loc='left')
+ax.set_title('Damage wrt No Adaptation', fontsize=17, fontweight='medium', loc='left')
 ax.set_xticks(positions)
 ax.set_xticklabels(climate_scenarios)
 ax.set_ylim(-100, 10)  # Adjust as needed based on your data
@@ -237,7 +237,7 @@ ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
 ax.spines['right'].set_visible(False)
 ax.spines['left'].set_visible(False)
 ax.spines['top'].set_visible(False)
-plt.title('Total inundation volume per scenario', fontsize=14, fontweight='bold', loc='left')
+plt.title('Total inundation volume per scenario', fontsize=14, fontweight='medium', loc='left')
 plt.ylabel('Total volume (m3)')
 plt.xticks(rotation=0)
 plt.legend(bbox_to_anchor=(0.75, 1.1), loc='upper center', frameon=False, ncol=3)
@@ -271,7 +271,7 @@ boundaries = np.linspace(0, 3, 11)  # 10 intervals from 0 to 3
 norm = BoundaryNorm(boundaries, ncolors=256)
 
 # Create a figure with 3 subplots
-fig, axes = plt.subplots(2, 2, figsize=(21, 21), sharex=True, sharey=True)
+fig, axes = plt.subplots(2, 2, figsize=(17, 15), sharex='col', sharey='row')
 axes = axes.flatten()  # Flatten the 2D array of axes to easily iterate over it
 # Loop through each TIFF path and plot it
 for ax, tiff_path in zip(axes, tiff_paths):
@@ -289,17 +289,16 @@ for ax, tiff_path in zip(axes, tiff_paths):
         show(src, ax=ax, cmap='Blues', norm=norm, zorder=2)
 
         # Set the axis limits to the raster bounds
-        ax.set_xlim([src.bounds.left, src.bounds.right-2000])
-        ax.set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
+        ax.set_xlim([src.bounds.left+100, src.bounds.right-2000])
+        ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2000])
+
 
         # Optional: Set a title for each subplot based on the TIFF file name or another identifier
         ax.set_title(tiff_path.split('_')[-4])
 
-# remove space between the subplots
-plt.subplots_adjust(wspace=-0.40, hspace=0.01)
 # Adjust the position of the color bar to not overlap with the subplots
-fig.subplots_adjust(right=0.95)
-cbar_ax = fig.add_axes([0.88, 0.15, 0.015, 0.7])
+plt.subplots_adjust(wspace=-0.1, hspace=0.1, right=0.95)
+cbar_ax = fig.add_axes([0.94, 0.15, 0.015, 0.7])
 # Create a common color bar for all subplots
 cb = ColorbarBase(cbar_ax, cmap='Blues', norm=norm, boundaries=boundaries, ticks=boundaries, spacing='proportional', orientation='vertical')
 cb.set_label('Inundation Depth (m)')
@@ -310,6 +309,8 @@ for ax in axes.flatten():
 # plt.tight_layout()
 plt.show()
 
+
+##########################################################################################
 # Function to calculate raster difference
 def calculate_raster_difference(path_a, path_b):
     with rasterio.open(path_a) as src_a:
@@ -333,18 +334,26 @@ def calculate_raster_difference(path_a, path_b):
     
     return difference, profile
 
-
-
 # Calculate the differences
 diff_2_minus_0, profile = calculate_raster_difference(tiff_paths[2], tiff_paths[0])
 diff_3_minus_1, _ = calculate_raster_difference(tiff_paths[3], tiff_paths[1])
+# Load original rasters to create masks
+with rasterio.open(tiff_paths[0]) as src_0:
+    data_0 = src_0.read(1).astype(float)  # Ensure float for NaN handling
+
+with rasterio.open(tiff_paths[1]) as src_1:
+    data_1 = src_1.read(1).astype(float)
+
+# Create masks
+mask_2_minus_0 = np.isnan(data_0) & ~np.isnan(diff_2_minus_0)
+mask_3_minus_1 = np.isnan(data_1) & ~np.isnan(diff_3_minus_1)
+
 # Original Rasters Color Range
 vmin_orig, vmax_orig = 0, 3
-
 # Difference Rasters Color Range
 vmin_diff, vmax_diff = -2, 2
 
-fig, axes = plt.subplots(2, 2, figsize=(21, 21), sharex='col', sharey='row')
+fig, axes = plt.subplots(2, 2, figsize=(17, 15), sharex='col', sharey='row')
 axes = axes.flatten()
 # Plot the original raster data for the top two subplots
 for i, tiff_path in enumerate(tiff_paths[:2]):
@@ -354,34 +363,37 @@ for i, tiff_path in enumerate(tiff_paths[:2]):
         axes[i].set_title(tiff_path.split('_')[-4])
 
                 # Set the axis limits to the raster bounds
-        axes[i].set_xlim([src.bounds.left, src.bounds.right-2000])
-        axes[i].set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
+        axes[i].set_xlim([src.bounds.left+100, src.bounds.right-2000])
+        axes[i].set_ylim([src.bounds.bottom+1300, src.bounds.top-2000])
 
 # Plot the differences for the bottom two subplots
 diff_arrays = [diff_2_minus_0, diff_3_minus_1]
-for i, diff_array in enumerate(diff_arrays, start=2):
+for i, (diff_array, mask) in enumerate(zip(diff_arrays, [mask_2_minus_0, mask_3_minus_1]), start=2):
     title_appendix = '3C - Hist' if i == 2 else '3C-Hightide - Hightide'
     gdf_landareas.plot(ax=axes[i], color='darkgray')
     im = axes[i].imshow(diff_array, cmap='BrBG_r', norm=Normalize(vmin=vmin_diff, vmax=vmax_diff), zorder=2,
                         extent=[profile['transform'][2], profile['transform'][2] + profile['transform'][0] * profile['width'],
                                 profile['transform'][5] + profile['transform'][4] * profile['height'], profile['transform'][5]])
+    
+    # overlay_array = np.ma.masked_where(~mask, mask)
+    # axes[i].imshow(overlay_array, cmap='gray', hatch='///', alpha=0)
     axes[i].set_title(f'{title_appendix}')
 
     # Set the axis limits to the raster bounds
-    axes[i].set_xlim([src.bounds.left, src.bounds.right-2000])
-    axes[i].set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
+    axes[i].set_xlim([src.bounds.left+100, src.bounds.right-2000])
+    axes[i].set_ylim([src.bounds.bottom+1300, src.bounds.top-2000])
 
 # Adjust layout for colorbars
-plt.subplots_adjust(wspace=-0.5, hspace=0.1, right=0.95)
+plt.subplots_adjust(wspace=-0.1, hspace=0.1, right=0.95)
 
 # Add colorbars
 # Original rasters colorbar
-cbar_ax_orig = fig.add_axes([0.88, 0.53, 0.015, 0.35])  # Adjust these values as needed
+cbar_ax_orig = fig.add_axes([0.93, 0.53, 0.014, 0.35])  # Adjust these values as needed
 cb_orig = ColorbarBase(cbar_ax_orig, cmap='Blues', norm=Normalize(vmin=vmin_orig, vmax=vmax_orig), orientation='vertical')
 cb_orig.set_label('Inundation Depth (m)')
 
 # Difference rasters colorbar
-cbar_ax_diff = fig.add_axes([0.88, 0.1, 0.015, 0.35])  # Adjust these values as needed
+cbar_ax_diff = fig.add_axes([0.93, 0.12, 0.014, 0.35])  # Adjust these values as needed
 cb_diff = ColorbarBase(cbar_ax_diff, cmap='BrBG_r', norm=Normalize(vmin=vmin_diff, vmax=vmax_diff), orientation='vertical')
 cb_diff.set_label('Inundation Depth Difference (m)')
 
@@ -401,34 +413,50 @@ gpkg_paths = [
     rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.gpkg'
 ]
 
+gpkg_exp_path = rf'D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip5.gpkg'
+gdf_exp = gpd.read_file(gpkg_exp_path)
+# load csv exposure
+csv_exp_path = rf'D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip5.csv'
+gdf_exp_csv = pd.read_csv(csv_exp_path)
+# add a column named maximum damage by joining over Object ID columns of both gdf_exp and gdf_exp_csv
+merged_gdf_exp = gdf_exp.merge(gdf_exp_csv, on='Object ID')
+
+# Pre-load and merge GPKG files with the exposure data
+merged_gdfs = []
+for gpkg_path in gpkg_paths:
+    gdf = gpd.read_file(gpkg_path)
+    merged_gdf = gdf.merge(merged_gdf_exp[['Object ID', 'Max Potential Damage: Structure']], on='Object ID')
+    merged_gdf['damage prc'] = (merged_gdf['Total Damage'] / merged_gdf['Max Potential Damage: Structure'])*100
+    merged_gdfs.append(merged_gdf)
+
+
+# Adjust the linspace boundaries for your specific range and number of intervals
+boundaries = np.linspace(0, 100, 11)  # Creates 10 intervals from 0 to 100
+norm = BoundaryNorm(boundaries, ncolors=256, clip=True)
+cmap = plt.get_cmap('Reds', 10)  # Adjust 'Reds' to your preferred colormap
+
 # Create a figure with 2x2 subplots
-fig, axes = plt.subplots(2, 2, figsize=(22, 22), sharex=True, sharey=True)
+fig, axes = plt.subplots(2, 2, figsize=(18, 14), sharex=True, sharey=True)
 axes = axes.flatten()  # Flatten the 2D array of axes to easily iterate over it
 # Loop through each GPKG path and plot it
-for ax, gpkg_path in zip(axes, gpkg_paths):
-    # Load the current GeoPackage
-    gdf = gpd.read_file(gpkg_path)
-
+for ax, merged_gdf, gpkg_path in zip(axes, merged_gdfs, gpkg_paths):    # Load the current GeoPackage
+    
     # Set the axis limits to the raster bounds
-    ax.set_xlim([src.bounds.left, src.bounds.right-2000])
-    ax.set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
+    ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
+    ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
 
-    # gdf_to_plot.plot(ax=ax, color='lightgray')  # Adjust color as needed
-    ctx.add_basemap(ax, crs=gdf.crs.to_epsg(), alpha=1, source=ctx.providers.CartoDB.PositronNoLabels, zorder=1)
-    gdf.plot(ax=ax, cmap='Reds', markersize = 1, vmin = 0, vmax = 1386549.33, zorder =2 )  # Adjust color and edgecolor as needed #edgecolor='black'
+    gdf_to_plot.plot(ax=ax, color='lightgray')  # Adjust color as needed
+    # ctx.add_basemap(ax, crs=gdf.crs.to_epsg(), alpha=1, source=ctx.providers.CartoDB.PositronNoLabels, zorder=1)
+    merged_gdf.plot(ax=ax, column = 'damage prc', cmap=cmap, norm=norm, markersize=1, zorder=2)  # Adjust color and edgecolor as needed #edgecolor='black'
     
     ax.set_title(gpkg_path.split('_')[-4])  # Adjust as needed for a meaningful title
 
 # Adjust layout
-plt.subplots_adjust(wspace=-0.4, hspace=0.1)
-
-# Create a colormap scalar mappable object for the colorbar
-norm = Normalize(vmin=0, vmax=1386549.33)
-sm = ScalarMappable(norm=norm, cmap='Reds')
-
-# Add a colorbar to the right of the subplots
+plt.subplots_adjust(wspace=-0.1, hspace=0.1)
+# Colorbar setup
+sm = ScalarMappable(norm=norm, cmap=cmap)
 cbar_ax = fig.add_axes([0.88, 0.15, 0.01, 0.7])  # Adjust these values as needed
-fig.colorbar(sm, cax=cbar_ax).set_label('Total Damage')
+fig.colorbar(sm, cax=cbar_ax).set_label('Total Damage (%)')
 
 for ax in axes:
     ax.set_xticks([])
@@ -438,7 +466,7 @@ plt.show()
 
 
 # differences
-run_name = '3c-hightide'
+run_name = 'hist'
 gpkg_path_no_adapt = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_noadapt.gpkg'
 gpkg_path_hold = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_hold.gpkg'
 gpkg_path_retreat = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_retreat.gpkg'
@@ -497,23 +525,21 @@ gdf_to_plot.plot(ax=axes[0], color='darkgray', zorder=1)  # Adjust color as need
 gdf_to_plot.plot(ax=axes[1], color='darkgray', zorder=1)  # Adjust color as needed
 
 diff_gdf_1.plot(ax=axes[0], column='Total Damage', cmap=custom_cmap, norm=norm, 
-                markersize=10, linewidth=0.0, zorder=2)
+                markersize=1, linewidth=0.0, zorder=2)
 axes[0].set_title('Hold - No Adapt')
 axes[0].axis('off')
 
 diff_gdf_2.plot(ax=axes[1], column='Total Damage', cmap=custom_cmap, norm=norm,
-                markersize=10, linewidth=0.0, zorder=2)
+                markersize=1, linewidth=0.0, zorder=2)
 axes[1].set_title('Retreat - No Adapt')
 axes[1].axis('off')
 #remove horizontal space between subplots
-plt.subplots_adjust(wspace=0.0)
+plt.subplots_adjust(wspace=0.1)
 
-# ctx.add_basemap(ax=axes[0], crs=gdf.crs.to_epsg(), alpha=0.5, source=ctx.providers.CartoDB.PositronNoLabels, zorder=1)
-# ctx.add_basemap(ax=axes[1], crs=gdf.crs.to_epsg(), alpha=0.5, source=ctx.providers.CartoDB.PositronNoLabels, zorder=1)
-# Set the axis limits to the raster bounds
 for ax in axes:
-    ax.set_xlim([src.bounds.left, src.bounds.right-2000])
-    ax.set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
+    # Set the axis limits to the raster bounds
+    ax.set_xlim([src.bounds.left+1000, src.bounds.right-3000])
+    ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
 
 # Create and position the color bar
 fig.subplots_adjust(right=0.85)
@@ -522,6 +548,8 @@ sm = ScalarMappable(norm=norm, cmap=custom_cmap)
 fig.colorbar(sm, cax=cbar_ax, boundaries=boundaries[::2], ticks=boundaries[::2], orientation='vertical').set_label('Change in damage (%)')
 plt.show()
 
+
+##########################################################################################
 # Comparison the two adaptation scenarios
 fig, axes = plt.subplots(1, 1, figsize=(15, 15), sharex=True, sharey=True)
 # Base plotting for all points
@@ -592,33 +620,6 @@ n_climate = len(climate_order)
 # Width of the bars
 bar_width = 0.15
 
-# Set positions of the bars for each adaptation scenario
-positions = np.arange(n_climate)  # Base positions
-
-# Create the plot
-fig, ax = plt.subplots(figsize=(10, 6))
-
-for i, adapt in enumerate(adapt_order):
-    # Calculate offset for each group based on adaptation scenario index
-    offset = (i - np.floor(len(adapt_order) / 2)) * bar_width
-    # Filter data for the current adaptation scenario
-    adapt_data = agg_info[agg_info['adapt_scen'] == adapt]
-    # Ensure the data is in the order of climate scenarios
-    adapt_data = adapt_data.set_index('clim_scen').reindex(climate_order).reset_index()
-    # Plot
-    ax.bar(positions + offset, adapt_data['People Affected above 150 cm'], width=bar_width, label=adapt, color=colors[i])
-
-# Formatting the plot
-ax.set_xlabel('Climate Scenario')
-ax.set_ylabel('People Affected above 150 cm')
-ax.set_title('People Affected Above 150 cm by Climate and Adaptation Scenarios')
-ax.set_xticks(positions)
-ax.set_xticklabels(climate_order)
-ax.legend(title='Adaptation Scenario', frameon=False, loc='upper left', bbox_to_anchor=(1, 1))
-
-plt.tight_layout()
-plt.show()
-
 
 # bar plot only for noadapt
 noadapt_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'noadapt']
@@ -667,7 +668,7 @@ for i, metric in enumerate(population_metrics):
 # Formatting the plot
 # ax.set_xlabel('Climate Scenario')
 ax.set_ylabel('Population exposure')
-ax.set_title('Exposed people for No-Adaptation Scenario', fontsize=14, fontweight='bold', loc='left')
+ax.set_title('Exposed people for Noadapt Scenario', fontsize=17, fontweight= 'medium', loc='left')
 ax.legend(frameon=False,  bbox_to_anchor=(0.8, 1.16), ncol=1, loc='upper center', fontsize=11)
 
 plt.xticks(rotation=0, ha='center')
@@ -771,7 +772,7 @@ for adapt_index, (adapt_scen, hatch) in enumerate(hatch_patterns.items()):
 # Customizing the plot
 # ax.set_xlabel('Climate Scenario')
 ax.set_ylabel('Change in population exposure (%)')
-ax.set_title('Populaton exposure wrt No-Adaptation', fontsize=14, fontweight='bold', loc='left')
+ax.set_title('Populaton exposure wrt No-Adaptation', fontsize=17, fontweight='medium', loc='left')
 ax.set_xticks(positions)
 ax.set_xticklabels(climate_order)
 

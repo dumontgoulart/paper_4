@@ -79,3 +79,28 @@ merged_gdf = buildings_centroids.merge(exposure_csv, on='Object ID')
 
 merged_df = merged_gdf.drop(columns='geometry')
 merged_df.to_csv(r'D:\paper_4\data\vanPanos\qgis_data\exposure_clip4_pop.csv', index=False)
+
+# test sanity
+test_sanity = False
+if test_sanity == True:
+    # Load the population raster
+    raster_path = 'D:\paper_4\data\qgis\moz_ppp_2020_UNadj_constrained_clip.tif'
+    # Open the population raster
+    with rasterio.open(raster_path) as src:
+        pop_raster = src.read(1)
+    # Calculate the total population from pop_raster
+    total_population_values = pop_raster[pop_raster > 0].sum()
+    # load merged_df
+    merged_df = pd.read_csv(r'D:\paper_4\data\vanPanos\qgis_data\exposure_clip4_pop.csv')
+    # Calculate the total population from result_df
+    total_population_result = merged_df['population'].sum()
+
+    # Check if the total population from the raster and result_df are the same
+    print(f"Total population from raster: {total_population_values}")
+    print(f"Total population from result_df: {total_population_result}")
+    # rough test to check how close they can be
+    if total_population_result > total_population_values *1.1 or total_population_result < total_population_values *0.9:
+        print("Sanity check failed: Total population from raster and result_df are not the same")
+    else:
+        print("Sanity check passed: Total population from raster and result_df are compatible")
+        print("Ratio between the two: ", total_population_result/total_population_values)

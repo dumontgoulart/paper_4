@@ -91,7 +91,7 @@ def run_fiat_scenario(fiat_root_folder, new_hazard_file, run_fiat = True, obtain
     gdf_output.to_file(rf"{fiat_root_folder}\output\fiat_spatial_{scenario}.gpkg", driver="GPKG")
 
 
-    
+
 fiat_root_folder = r'D:\paper_4\data\vanPanos\FIAT_model_new'
 
 sim = 'idai_ifs_rebuild_bc_'
