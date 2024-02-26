@@ -44,7 +44,7 @@ def align_gdf(gdf, all_ids, master_geometry_dict):
 
 ##########################################################################################
 
-fiat_output_path = r'D:\paper_4\data\vanPanos\FIAT_model_new\output'
+fiat_output_path = r'D:\paper_4\data\floodadapt_results\spatial_gpkg'
 sim = 'idai_ifs_rebuild_bc_'
 
 # scenarios
@@ -62,7 +62,7 @@ gdf_list = []
 for climate in climate_scenarios:
     for adapt in adapt_scenarios:
         # Construct the file name based on the scenario
-        file_name = rf'{fiat_output_path}\fiat_spatial_hmax_{sim}{climate}_rain_surge_{adapt}.gpkg'
+        file_name = rf'{fiat_output_path}\spatial_{sim}{climate}_rain_surge_{adapt}.gpkg'
         
         # Load the .gpkg file
         gdf = gpd.read_file(file_name)
@@ -97,6 +97,32 @@ bar_width = 0.15
 # Set positions of the bars for each adaptation scenario
 positions = np.arange(len(climate_scenarios))  # Base positions
 
+noadapt_data = agg_data[agg_data['adapt_scenario'] == 'noadapt']
+# set the order of the climate scenarios
+noadapt_data = noadapt_data.set_index('climate_scenario').reindex(climate_scenarios).reset_index()
+
+# Create the plot
+fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
+tick_increment = 4 *10e6
+ax.set_yticks(np.arange(0, noadapt_data['Total Damage'].max()*1.1 + tick_increment, tick_increment))
+ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
+ax.spines['right'].set_visible(False)
+ax.spines['left'].set_visible(False)
+ax.spines['top'].set_visible(False)
+
+ax.bar(positions, noadapt_data['Total Damage'], width=bar_width, color=colors[0], zorder=2)
+
+# Formatting the plot
+ax.set_xlabel('Climate Scenario')
+ax.set_ylabel('Total Damage [$]')
+ax.set_title('Total Damage of Idai in Beira for different climate scenarios', fontsize=17, fontweight='medium', loc='left')
+ax.set_xticks(positions)
+ax.set_xticklabels(climate_scenarios)
+ax.legend(frameon=False, loc='upper center', bbox_to_anchor=(0.8, 1.1), ncol=3, fontsize=12)
+
+plt.show()
+
+##########################################################################################
 # Create the plot
 fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
 ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
@@ -179,7 +205,7 @@ plt.show()
 
 # now load hazards to analyse
 # Load the hazard data
-hazard_folder_path = r'D:\paper_4\data\vanPanos\FIAT_model_new\Hazard'
+hazard_folder_path = r'D:\paper_4\data\floodadapt_results\hazard_tiff'
 
 
 # Initialize a dictionary to store the loaded data
@@ -255,10 +281,10 @@ from matplotlib.cm import ScalarMappable
 import contextily as ctx
 
 tiff_paths = [
-    rf'D:\paper_4\data\sfincs_output\snellius_idai\hmax_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.tiff',
-    rf'D:\paper_4\data\sfincs_output\snellius_idai\hmax_idai_ifs_rebuild_bc_hightide_rain_surge_noadapt.tiff',
-    rf'D:\paper_4\data\sfincs_output\snellius_idai\hmax_idai_ifs_rebuild_bc_3c_rain_surge_noadapt.tiff',
-    rf'D:\paper_4\data\sfincs_output\snellius_idai\hmax_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.tiff'
+    rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.tiff',
+    rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_hightide_rain_surge_noadapt.tiff',
+    rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_3c_rain_surge_noadapt.tiff',
+    rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.tiff'
 ]
 
 landareas_path = rf'D:\paper_4\data\sfincs_input\data_deltares_idai\osm_landareas.gpkg'
@@ -404,13 +430,11 @@ plt.show()
 
 ##########################################################################################
 # NOW FOR THE IMPACT VECTORS
-
-# Define your GPKG paths
 gpkg_paths = [
-    rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.gpkg',
-    rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_hightide_rain_surge_noadapt.gpkg',
-    rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_3c_rain_surge_noadapt.gpkg',
-    rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.gpkg'
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.gpkg',
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_hightide_rain_surge_noadapt.gpkg',
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_3c_rain_surge_noadapt.gpkg',
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.gpkg'
 ]
 
 gpkg_exp_path = rf'D:\paper_4\data\vanPanos\FIAT_model_new\Exposure\exposure_clip5.gpkg'
@@ -426,6 +450,8 @@ merged_gdfs = []
 for gpkg_path in gpkg_paths:
     gdf = gpd.read_file(gpkg_path)
     merged_gdf = gdf.merge(merged_gdf_exp[['Object ID', 'Max Potential Damage: Structure']], on='Object ID')
+    # drop the 0 values in total damage
+    merged_gdf = merged_gdf[merged_gdf['Total Damage'] > 0]
     merged_gdf['damage prc'] = (merged_gdf['Total Damage'] / merged_gdf['Max Potential Damage: Structure'])*100
     merged_gdfs.append(merged_gdf)
 
@@ -433,7 +459,7 @@ for gpkg_path in gpkg_paths:
 # Adjust the linspace boundaries for your specific range and number of intervals
 boundaries = np.linspace(0, 100, 11)  # Creates 10 intervals from 0 to 100
 norm = BoundaryNorm(boundaries, ncolors=256, clip=True)
-cmap = plt.get_cmap('Reds', 10)  # Adjust 'Reds' to your preferred colormap
+cmap = plt.get_cmap('Reds')  # Adjust 'Reds' to your preferred colormap
 
 # Create a figure with 2x2 subplots
 fig, axes = plt.subplots(2, 2, figsize=(18, 14), sharex=True, sharey=True)
@@ -456,7 +482,7 @@ plt.subplots_adjust(wspace=-0.1, hspace=0.1)
 # Colorbar setup
 sm = ScalarMappable(norm=norm, cmap=cmap)
 cbar_ax = fig.add_axes([0.88, 0.15, 0.01, 0.7])  # Adjust these values as needed
-fig.colorbar(sm, cax=cbar_ax).set_label('Total Damage (%)')
+fig.colorbar(sm, cax=cbar_ax).set_label('Relative Damage (%)')
 
 for ax in axes:
     ax.set_xticks([])
@@ -464,12 +490,12 @@ for ax in axes:
 
 plt.show()
 
-
+##########################################################################################
 # differences
 run_name = 'hist'
-gpkg_path_no_adapt = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_noadapt.gpkg'
-gpkg_path_hold = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_hold.gpkg'
-gpkg_path_retreat = rf'D:\paper_4\data\vanPanos\FIAT_model_new\output\fiat_spatial_hmax_idai_ifs_rebuild_bc_{run_name}_rain_surge_retreat.gpkg'
+gpkg_path_no_adapt = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_noadapt.gpkg'
+gpkg_path_hold = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_hold.gpkg'
+gpkg_path_retreat = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_retreat.gpkg'
 
 gdf_no_adapt = gpd.read_file(gpkg_path_no_adapt)
 gdf_hold = gpd.read_file(gpkg_path_hold)
@@ -622,9 +648,9 @@ bar_width = 0.15
 
 
 # bar plot only for noadapt
-noadapt_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'noadapt']
+noadapt_pop_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'noadapt']
 # drop column 'People Affected up 15 cm'
-noadapt_data = noadapt_data.drop(columns=['People Affected up 15 cm'])
+noadapt_pop_data = noadapt_pop_data.drop(columns=['People Affected up 15 cm'])
 
 # Step 2: Create the stacked bar chart
 climate_order = ['hist', '3c', 'hightide', '3c-hightide']
@@ -634,14 +660,14 @@ population_metrics = [
     'People Affected above 150 cm'
 ]
 
-# Sort noadapt_data based on the order of climate scenarios
-noadapt_data = noadapt_data.set_index('clim_scen').reindex(climate_order).reset_index()
+# Sort noadapt_pop_data based on the order of climate scenarios
+noadapt_pop_data = noadapt_pop_data.set_index('clim_scen').reindex(climate_order).reset_index()
 blue_colors = ['#a9cce3', '#5dade2', '#2e86c1']
 
 # Set up the figure
 fig, ax = plt.subplots(figsize=(10, 6), dpi=150)
 tick_increment = 50000
-ax.set_yticks(np.arange(0, noadapt_data['People Affected between 50 and 150 cm'].max()*1.1 + tick_increment, tick_increment))
+ax.set_yticks(np.arange(0, noadapt_pop_data['People Affected between 50 and 150 cm'].max()*1.1 + tick_increment, tick_increment))
 
 ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
 ax.spines['right'].set_visible(False)
@@ -653,8 +679,8 @@ bottom = np.zeros(len(climate_order))
 # Plot the bars with the blue color gradient
 for i, metric in enumerate(population_metrics):
     ax.bar(
-        noadapt_data['clim_scen'],
-        noadapt_data[metric],
+        noadapt_pop_data['clim_scen'],
+        noadapt_pop_data[metric],
         bottom=bottom,
         color=blue_colors[i],
         width=0.2, 
@@ -663,7 +689,7 @@ for i, metric in enumerate(population_metrics):
         zorder=2,
     )
     # Update the bottom position for the next segment of the stack
-    bottom += noadapt_data[metric].values
+    bottom += noadapt_pop_data[metric].values
 
 # Formatting the plot
 # ax.set_xlabel('Climate Scenario')
@@ -674,10 +700,11 @@ ax.legend(frameon=False,  bbox_to_anchor=(0.8, 1.16), ncol=1, loc='upper center'
 plt.xticks(rotation=0, ha='center')
 plt.show()
 
+#sum all the population metrics for noadapt_pop_data
+noadapt_pop_data['Total significant exposed people'] = noadapt_pop_data['People Affected between 15 to 50 cm'] + noadapt_pop_data['People Affected between 50 and 150 cm'] + noadapt_pop_data['People Affected above 150 cm']
 
 
-
-
+##########################################################################################
 # Define the metrics and scenarios
 population_metrics = [
     'People Affected between 15 to 50 cm',
@@ -788,6 +815,3 @@ ax.legend(handles=legend_handles, frameon=False,  bbox_to_anchor=(0.8, 1.16), nc
 plt.tight_layout()
 plt.show()
 
-
-
-# figure B
