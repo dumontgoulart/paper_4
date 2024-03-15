@@ -28,7 +28,7 @@ storm = 'idai'
 data_libs = ['d:/paper_4/data/data_catalogs/data_catalog_converter.yml', base_folder+rf'/data_deltares_{storm}/data_catalog.yml']
 
 # choose scenario
-scenario = 'idai_ifs_rebuild_bc_3c-hightide_rain_surge_retreat' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
+scenario = 'idai_ifs_rebuild_bc_hist_rain_surge_noadapt' #test_surge_ifs_rebuild_idai_bc test_rain_ifs_cf_bc
 tif_file = rf'D:\paper_4\data\sfincs_output\test\{scenario}.tiff'
 
 mod_nr = SfincsModel(base_folder+scenario, data_libs = data_libs, mode="r") #test_rain_gpm
@@ -40,14 +40,18 @@ landmask = mod_nr.data_catalog.get_geodataframe(f"D:\paper_4\data\sfincs_input\d
 
 da_hmax = mod_nr.results["hmax"].max(['timemax'])
 mask = da_hmax.raster.geometry_mask(landmask)
+
+da_h = mod_nr.results["h"].isel(time=-1)
+da_h = da_h.where(da_h > 0.05).where(mask)
+
 da_hmax = da_hmax.where(da_hmax > 0.05).where(mask)
 
 # update attributes for colorbar label later
-da_hmax.attrs.update(long_name="flood depth", unit="m")
+da_h.attrs.update(long_name="flood depth", unit="m")
 # check it's in north-up order
-if da_hmax.y.values[0] < da_hmax.y.values[-1]:
+if da_h.y.values[0] < da_h.y.values[-1]:
     # Flip vertically
-    da_hmax = da_hmax[::-1, :]
+    da_h = da_h[::-1, :]
     print("Flipped the raster as it was not in north-up order.")
 else:
     print("Raster already in north-up order, no flip needed.")
@@ -55,7 +59,7 @@ else:
 fig, ax = mod_nr.plot_basemap(
     fn_out=None,
     figsize=(16, 12),
-    variable=da_hmax,
+    variable=da_h,
     plot_bounds=False,
     plot_geoms=False,
     bmap="sat",
@@ -71,3 +75,17 @@ fig, ax = mod_nr.plot_basemap(
 plt.show()
 
 da_hmax.rio.to_raster(tif_file, tiled=True, compress='LZW')
+
+
+# load this file D:\paper_4\data\FloodAdapt-GUI\Database\beira\output\Scenarios\idai_ifs_rebuild_bc_hist_rain_surge_noadapt\Flooding\simulations\overland\sfincs_map.nc
+
+sfincs_map = xr.open_dataset(r'D:\paper_4\data\FloodAdapt-GUI\Database\beira\output\Scenarios\idai_ifs_rebuild_bc_hist_rain_surge_noadapt\Flooding\simulations\overland\sfincs_map.nc')
+
+# now find the "h" for the last time step
+sfincs_map_1 = sfincs_map['h'].isel(time=-1)
+
+# plot results
+fig, ax = plt.subplots(1, 1, figsize=(16, 12))
+sfincs_map_1.plot(ax=ax, cmap='Blues', add_colorbar=True)
+ax.set_title('Flood depth [m]')
+plt.show()
