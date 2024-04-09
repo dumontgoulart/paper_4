@@ -175,4 +175,4 @@ if __name__ == "__main__":
 
 
     # optional: run locally sfincs model
-    # sfincs_scen.run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_3c-hightide_rain_surge_noadapt', fn_exe = fn_exe)
+    sfincs_scen.run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\{storm}_{sim_name}_3c-hightide_rain_surge_noadapt', fn_exe = fn_exe)

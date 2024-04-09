@@ -880,6 +880,17 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
+    print(ds_his['point_zs'].isel(stations = 4).max().item(), "which correspond to ")
+    print(ds_his_maxtide['point_zs'].isel(stations = 4).max().item())
+    print(ds_his_spider['point_zs'].isel(stations = 4).max().item())
+
+    # find the time value where the maximum value of ds_his['point_zs'].isel(stations = 4) occurs
+    ds_his['point_zs'].isel(stations = 4).argmax()
+    time_peak_tide = ds_his['point_zs'].isel(stations = 4, time = ds_his['point_zs'].isel(stations = 4).argmax()).time.values
+    # now find for ds_his_tides['point_zs'].isel(stations = 4) the same time from the previous step
+    ds_his['point_zs'].isel(stations = 4).sel(time =time_peak_tide).item() - ds_his_tides['point_zs'].isel(stations = 4).sel(time =time_peak_tide).item()
+
+
     # find time for maximu mvalue of ds_his_tides['point_zs'].isel(stations = 4)
     ds_his_spider['point_zs'].isel(stations = 4).argmax()
     max_all = ds_his_spider['point_zs'].isel(stations = 4)[990]
@@ -922,5 +933,33 @@ if __name__ == "__main__":
 
     ds_wind['wind_speed'].sel(x=742438.71, y=7748921.02, method='nearest').plot()
     plt.show()
+
+
+
+import rasterio
+import geopandas as gpd
+
+# load Downloads/Clipped_elevation.tiff
+elev = rasterio.open(r'C:\Users\morenodu\Downloads\Clipped_elevation (2).tif')
+# get maximum value of elev
+elev.read().min()
+
+# plot elev with colormap from min to max
+plt.imshow(elev.read(1), cmap='terrain')
+plt.colorbar()
+plt.show()
+
+# load the vector mask
+mask = gpd.read_file(r'C:\Users\morenodu\Downloads\mask_layer.shp')
+# mask the raster with the vector mask
+out_image, out_transform = rasterio.mask.mask(elev, mask.geometry, crop=True)
+# plot the masked raster
+plt.imshow(out_image[0], cmap='terrain')
+plt.colorbar()
+
+
+
+
+
 
 
