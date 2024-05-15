@@ -534,123 +534,10 @@ hatch_patterns = {'Hold the line': '','Integrated': '///' }  # Adjust patterns a
 bar_width = 0.15
 positions = np.arange(len(climate_order))
 
-## PLOT
-fig, ax = plt.subplots(figsize=(12, 6), dpi=150)
-# Add thin gray horizontal lines at intervals of 20
-ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
-ax.spines['right'].set_visible(False)
-ax.spines['left'].set_visible(False)
-ax.spines['top'].set_visible(False)
-
-# Initialize dictionaries to hold the cumulative bottoms for positive and negative stacks
-pos_bottoms_dict = {adapt_scen: np.zeros(len(climate_order)) for adapt_scen in hatch_patterns.keys()}
-neg_bottoms_dict = {adapt_scen: np.zeros(len(climate_order)) for adapt_scen in hatch_patterns.keys()}
-
-# Iterate over adaptation scenarios and climate scenarios
-for adapt_index, (adapt_scen, hatch) in enumerate(hatch_patterns.items()):
-    # Offset to shift the bars for each adaptation scenario
-    adapt_offset = (adapt_index - np.floor(len(hatch_patterns) / 2)) * bar_width
-
-    for i, metric in enumerate(population_metrics):
-        metric_values = []
-        for clim_scen_index, clim_scen in enumerate(climate_order):
-            value = diff_df[(diff_df['clim_scen'] == clim_scen) & (diff_df['adapt_scen'] == adapt_scen)][metric].values
-            metric_value = value[0] if len(value) > 0 else 0
-            metric_values.append(metric_value)
-            
-            # Determine whether to update the positive or negative bottom
-            if metric_value > 0:
-                bottom = pos_bottoms_dict[adapt_scen][clim_scen_index]
-                pos_bottoms_dict[adapt_scen][clim_scen_index] += metric_value
-            else:
-                bottom = neg_bottoms_dict[adapt_scen][clim_scen_index]
-                neg_bottoms_dict[adapt_scen][clim_scen_index] += metric_value
-
-            # Plot the bar
-            ax.bar(
-                positions[clim_scen_index] + adapt_offset,
-                metric_value,
-                bottom=bottom,
-                color=blue_colors[i],
-                edgecolor='white',
-                hatch=hatch,
-                width=bar_width,
-                zorder=3,
-                label=f"{metric} ({adapt_scen})" if i == 0 and clim_scen_index == 0 else ""
-            )
-# Customizing the plot
-# ax.set_xlabel('Climate Scenario')
-ax.set_ylabel('Change in population exposure (%)')
-ax.set_title('Populaton exposure change\n' +' for adaptation strategies', wrap=True, fontsize=17, fontweight='medium', loc='left')
-ax.set_xticks(positions)
-ax.set_xticklabels(climate_order)
-
-# Create a legend for the population metrics (colors only)
-color_legend_handles = [Patch(facecolor=blue_colors[i], label=population_metrics[i]) for i in range(len(population_metrics))]
-# Create a legend for the adaptation scenarios (hatching patterns, using a neutral color for visibility)
-hatch_legend_handles = [Patch(facecolor='grey', hatch=hatch_patterns[adapt_scen], label=adapt_scen) for adapt_scen in hatch_patterns]
-# Combine both legends
-legend_handles = color_legend_handles + hatch_legend_handles
-# Add the combined legend to the plot
-ax.legend(handles=legend_handles, frameon=False,  bbox_to_anchor=(0.8, 1.16), ncol=2, loc='upper center', fontsize=11)
-
-# save figure in D:\paper_4\data\Figures\paper_figures
-plt.savefig(r'D:\paper_4\data\Figures\paper_figures\population_exposure_diff_bar.png', dpi=300, bbox_inches='tight')
-plt.tight_layout()
-plt.show()
-
-#  SECOND OPTION
 # remove noadapt from all_infometrics_df
 adapt_df = all_infometrics_df[all_infometrics_df['adapt_scen'] != 'No Adaptation']
 # drop column 'People Affected up 15 cm'
 adapt_df = adapt_df.drop(columns=['People Affected up 15 cm'])
-
-fig, ax = plt.subplots(figsize=(12, 6), dpi=150)
-group_width = 0.4
-bar_width = group_width / len(climate_order)
-bar_positions = np.arange(len(adapt_order))
-
-ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
-ax.spines['right'].set_visible(False)
-ax.spines['left'].set_visible(False)
-ax.spines['top'].set_visible(False)
-
-# Initialize bottom for each group (adaptation strategy)
-bottom_dict = {adapt_scen: np.zeros(len(climate_order)) for adapt_scen in adapt_order}
-
-for adapt_index, adapt_scen in enumerate(adapt_order):
-    group_position = bar_positions[adapt_index]
-
-    for climate_index, climate_scen in enumerate(climate_order):
-        climate_offset = (climate_index - (len(climate_order) - 1) / 2) * bar_width
-
-        for i, metric in enumerate(population_metrics):
-            metric_value = adapt_df.loc[(adapt_df['clim_scen'] == climate_scen) & 
-                                        (adapt_df['adapt_scen'] == adapt_scen), metric].values
-            if len(metric_value) > 0:
-                ax.bar(
-                    group_position + climate_offset,
-                    metric_value,
-                    bottom=bottom_dict[adapt_scen][climate_index],
-                    width=bar_width,
-                    color=blue_colors[i],
-                    edgecolor='white',
-                    label=f"{metric}" if adapt_index == 0 and climate_index == 0 else "",
-                    zorder=3
-                )
-                # Update the bottom for the next metric in the same group and climate scenario
-                bottom_dict[adapt_scen][climate_index] += metric_value
-
-ax.set_ylabel('Population exposure')
-ax.set_title('Population Exposure for Adaptation Strategies', fontsize=17, fontweight='medium', loc='left')
-ax.set_xticks(bar_positions)
-ax.set_xticklabels(adapt_order)
-ax.legend(frameon=False, bbox_to_anchor=(0.8, 1.16), ncol=2, loc='upper center', fontsize=11)
-plt.savefig(r'D:\paper_4\data\Figures\paper_figures\population_exposure_diff_stra_bar.png', dpi=300, bbox_inches='tight')
-plt.tight_layout()
-plt.show()
-
-
 
 # Prepare the data for both scenarios
 hold_pop_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'Hold the line'].drop(columns=['People Affected up 15 cm'])
@@ -762,6 +649,8 @@ yticks_population = np.arange(0, hold_pop_data['Total significant exposed people
 y_max_damage = max([pop_data['Total building damage'].max() for pop_data in [hold_pop_data, int_pop_data]]) * 1.1
 yticks_damage = np.arange(0, y_max_damage + tick_increment_damage, tick_increment_damage)
 
+dict_fig1 = {0: "a)", 1: "b)"}
+dict_fig2 = {0: "c)", 1: "d)"}
 # Top Row Plots for Population Exposure
 for i, (ax, pop_data, title) in enumerate(zip(axes[:2], [hold_pop_data, int_pop_data], ['Hold the line', 'Integrated'])):
     # ax.set_yticks(yticks_population)
@@ -785,7 +674,7 @@ for i, (ax, pop_data, title) in enumerate(zip(axes[:2], [hold_pop_data, int_pop_
         bottom += pop_data[metric].values
 
     ax.set_ylabel('Population exposure' if i == 0 else "")  # Label only for the first column
-    title = ax.set_title(f'Population exposure for {title}', fontsize=14, fontweight='medium', loc='left', pad=10)
+    title = ax.set_title(f'{dict_fig1[i]} Population exposure for {title}', fontsize=13, fontweight='medium', loc='left', pad=10)
     title.set_position([-0.1, 1])  # Adjust the first value to move left/right, second value to move up/down
     ax.tick_params(axis='x', which='both', length=0)  # Hide x-axis ticks
 
@@ -809,7 +698,7 @@ for i, (ax, pop_data, title) in enumerate(zip(axes[2:], [hold_pop_data, int_pop_
     )
 
     ax.set_ylabel('Damage [10e6 USD]' if i == 0 else "")
-    title = ax.set_title(f'Economic damage for {title}', fontsize=14, fontweight='medium', loc='left', pad=10)
+    title = ax.set_title(f'{dict_fig2[i]} Economic damage for {title}', fontsize=14, fontweight='medium', loc='left', pad=10)
     title.set_position([-0.1, 1])  # Adjust the first value to move left/right, second value to move up/down
     ax.set_xticklabels(pop_data['clim_scen'], rotation=0, ha='center')
 
@@ -865,9 +754,8 @@ for ax, tiff_path in zip(axes, tiff_paths):
                         "3C":"c)",
                         "3C-springtide":"d)"}
         
-        ax.set_title(f"{dict_letters[scen_dict[tiff_path.split('_')[-4]]]} {scen_dict[tiff_path.split('_')[-4]]}")
+        ax.set_title(f"{dict_letters[scen_dict[tiff_path.split('_')[-4]]]} {scen_dict[tiff_path.split('_')[-4]]}", fontsize=12, fontweight='medium', loc='left')
         
-
 # Adjust the position of the color bar to not overlap with the subplots
 plt.subplots_adjust(wspace=0.091, hspace=0.05, right=0.95)
 cbar_ax = fig.add_axes([0.96, 0.15, 0.015, 0.7])
@@ -1036,13 +924,13 @@ for ax, merged_gdf, gpkg_path in zip(axes, merged_gdfs, gpkg_paths):    # Load t
     gdf_to_plot.plot(ax=ax, color='lightgray')  # Adjust color as needed
     merged_gdf.plot(ax=ax, column = 'damage prc', cmap=cmap, norm=norm, markersize=1, zorder=2)  # Adjust color and edgecolor as needed #edgecolor='black'
     gdf_exp_residential4.plot(ax=ax, facecolor='none', edgecolor = 'black', zorder=3, alpha=1, label = 'Informal setllements' )  # Adjust color, markersize, and alpha as needed
-    ax.set_title(f"{dict_letters[scen_dict[gpkg_path.split('_')[-4]]]} {scen_dict[gpkg_path.split('_')[-4]]}")
+    ax.set_title(f"{dict_letters[scen_dict[gpkg_path.split('_')[-4]]]} {scen_dict[gpkg_path.split('_')[-4]]}", fontsize=12, fontweight='medium', loc='left')
 # Adjust layout
 plt.subplots_adjust(wspace= 0.09, hspace=0.1)
 # Colorbar setup
 sm = ScalarMappable(norm=norm, cmap=cmap)
 cbar_ax = fig.add_axes([0.91, 0.15, 0.015, 0.7])  # Adjust these values as needed
-fig.colorbar(sm, cax=cbar_ax).set_label('Relative damage (%)')
+fig.colorbar(sm, cax=cbar_ax).set_label('Relative damage (%)', pad=-3)
 # add legend
 informal_settlements_legend = Patch(facecolor='none', edgecolor='black', label='Informal settlements')
 plt.legend(handles=[informal_settlements_legend], fontsize=10,frameon=False, bbox_to_anchor=(-1.40, -0.045))
@@ -1145,43 +1033,6 @@ plt.show()
 gdf_hold_merged = process_gdf(gdf_hold, merged_gdf_exp)
 gdf_retreat_merged = process_gdf(gdf_retreat, merged_gdf_exp)
 
-fig, axes = plt.subplots(1, 2, figsize=(doublecol*1.6, singlecol*1.4), sharex=True, sharey=True, dpi=300)
-
-# List of GeoDataFrames and corresponding titles
-gdfs = [gdf_hold_merged, gdf_retreat_merged]
-titles = ['c) Hold the Line under 3C-hightide', 'd) Integrated for 3C-hightide']
-
-# Loop through each GeoDataFrame and plot it
-for ax, gdf, title in zip(axes, gdfs, titles):
-    # Set the axis limits to the raster bounds
-    ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
-    ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
-    gdf_to_plot.plot(ax=ax, color='lightgray')  # Adjust color as needed
-    gdf.plot(ax=ax, column='damage prc', cmap=cmap, norm=norm, markersize=1, zorder=2)  # Adjust color and edgecolor as needed
-    gdf_exp_residential4.plot(ax=ax, facecolor='none', edgecolor='black', zorder=3, alpha=1, label='Informal settlements')  # Adjust color, markersize, and alpha as needed
-    ax.set_title(title)
-
-# Adjust layout
-plt.subplots_adjust(wspace=0.09, hspace=0.1)
-
-# Colorbar setup
-sm = ScalarMappable(norm=norm, cmap=cmap)
-cbar_ax = fig.add_axes([0.91, 0.15, 0.015, 0.7])  # Adjust these values as needed
-fig.colorbar(sm, cax=cbar_ax).set_label('Relative damage (%)')
-
-# Add legend
-informal_settlements_legend = Patch(facecolor='none', edgecolor='black', label='Informal settlements')
-plt.legend(handles=[informal_settlements_legend], fontsize=10, frameon=False, bbox_to_anchor=(-1.40, -0.045))
-
-for ax in axes:
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-# Save figure
-# plt.savefig(r'D:\paper_4\data\Figures\paper_figures\impact_vectors.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-
 # Create a figure with 2x2 subplots
 
 # Adjust the linspace boundaries for your specific range and number of intervals
@@ -1215,7 +1066,6 @@ title = axs[0].set_title('a) Changes in exposed population', fontsize=13, fontwe
 title_2 = axs[1].set_title('b) Changes in building damage', fontsize=13, fontweight='medium', loc='left', pad=20)
 title.set_position([-0.1, 2])  # Adjust the first value to move left/right, second value to move up/down
 title_2.set_position([-0.11, 2])  # Adjust the first value to move left/right, second value to move up/down
-# axs[1].set_title('Damage Changes', fontsize=15, fontweight='medium', loc='left')
 axs[0].set_xticks(clim_scen_positions)
 axs[1].set_xticks(clim_scen_positions)
 axs[0].set_xticklabels(clim_scens)
@@ -1231,7 +1081,7 @@ legend_handles = [mpatches.Patch(facecolor='white', edgecolor='black', hatch=hat
                   for hatch, label in zip(hatches, adapt_scens)]
 fig.legend(handles=legend_handles, frameon=False, bbox_to_anchor=(0.80, 0.95), ncol=1, loc='upper left', fontsize=10)
 
-for ax, gdf, title in zip(axs[2:], [gdf_hold_merged, gdf_retreat_merged], ['c) Hold the Line under 3C-hightide', 'd) Integrated under 3C-hightide']):
+for ax, gdf, title in zip(axs[2:], [gdf_hold_merged, gdf_retreat_merged], ['c) Hold the Line under 3C-springide', 'd) Integrated under 3C-springide']):
     # Set the axis limits to the raster bounds
     ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
     ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
