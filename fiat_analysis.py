@@ -38,13 +38,13 @@ doublecol = 14 * 0.393701
 ##########################################################################################
 
 # Assuming the alignment function needs to handle missing geometries appropriately
-def align_gdf(gdf, all_ids, master_geometry_dict):
+def align_gdf(gdf, all_ids, master_geometry_dict, metric = 'Total Damage'):
     # Ensure the GDF includes all 'Object IDs', filling missing ones with default values
     aligned_df = pd.DataFrame(all_ids, columns=['Object ID']).merge(
         gdf.drop(columns='geometry'),
         on='Object ID',
         how='left'
-    ).fillna({'Total Damage': 0})
+    ).fillna({metric: 0})
 
     # Assign geometries from the master_geometry_dict based on 'Object ID'
     aligned_df['geometry'] = aligned_df['Object ID'].map(master_geometry_dict)
@@ -377,6 +377,16 @@ percentage_pop_increase = noadapt_pop_data['Total significant exposed people'] /
 percentage_damage_increase = noadapt_pop_data['Total building damage'] / noadapt_pop_data['Total building damage'].iloc[0]
 
 print((noadapt_pop_data['above 150 cm'] / noadapt_pop_data['Total significant exposed people'])*100)
+# print noadapt_pop_data without adapt_scen column and without the index
+noadapt_pop_data_values = noadapt_pop_data.drop(columns=['adapt_scen']).set_index('clim_scen')
+# make now the table from noadapt_pop_data_values with relative values based on the Baseline
+noadapt_pop_data_values_relative = noadapt_pop_data_values.div(noadapt_pop_data_values.iloc[0], axis=1).round(2)
+# rename the columns Total significant exposed people to Total exposed people and change the order of the columns to be : Total exposed people above 150 cm  15 to 50 cm  50 and 150 cm  Total building damage
+noadapt_pop_data_values_relative = noadapt_pop_data_values_relative.rename(columns={'Total significant exposed people':'Total exposed people (%)', 'above 150 cm':'above 150 cm (%)', '15 to 50 cm':'15 to 50 cm (%)', '50 and 150 cm':'50 and 150 cm (%)', 'Total building damage':'Total building damage (%)'})
+noadapt_pop_data_values_relative = noadapt_pop_data_values_relative[['Total exposed people (%)', 'Total building damage (%)']]
+# now combine the relative values with the original noadapt_pop_data
+noadapt_pop_data_comb = noadapt_pop_data.merge(noadapt_pop_data_values_relative, left_on='clim_scen', right_index=True).round(2)
+noadapt_pop_data_comb[['clim_scen','Total significant exposed people', 'Total exposed people (%)', 'Total building damage', 'Total building damage (%)']].set_index('clim_scen')
 
 
 blue_colors = ['#a9cce3', '#5dade2', '#2e86c1']
@@ -538,7 +548,9 @@ positions = np.arange(len(climate_order))
 adapt_df = all_infometrics_df[all_infometrics_df['adapt_scen'] != 'No Adaptation']
 # drop column 'People Affected up 15 cm'
 adapt_df = adapt_df.drop(columns=['People Affected up 15 cm'])
-
+noadapt_df2 = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'No Adaptation']
+# drop column 'People Affected up 15 cm'
+noadapt_df2 = noadapt_df2.drop(columns=['People Affected up 15 cm'])
 # Prepare the data for both scenarios
 hold_pop_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'Hold the line'].drop(columns=['People Affected up 15 cm'])
 int_pop_data = all_infometrics_df[all_infometrics_df['adapt_scen'] == 'Integrated'].drop(columns=['People Affected up 15 cm'])
@@ -550,6 +562,8 @@ int_pop_data = int_pop_data.set_index('clim_scen').reindex(climate_order).reset_
 # Create a new column for 'Total significant exposed people' and calculate the difference
 hold_pop_data['Total significant exposed people'] = hold_pop_data['15 to 50 cm'] + hold_pop_data['50 and 150 cm'] + hold_pop_data['above 150 cm']
 int_pop_data['Total significant exposed people'] = int_pop_data['15 to 50 cm'] + int_pop_data['50 and 150 cm'] + int_pop_data['above 150 cm']
+noadapt_df2['Total significant exposed people'] = noadapt_df2['15 to 50 cm'] + noadapt_df2['50 and 150 cm'] + noadapt_df2['above 150 cm']
+noadapt_df2= noadapt_df2[['clim_scen','Total significant exposed people','Total building damage']]
 
 hold_diff = hold_pop_data[['clim_scen','Total significant exposed people','Total building damage']].copy()
 int_diff = int_pop_data[['clim_scen','Total significant exposed people','Total building damage']].copy()
@@ -567,6 +581,8 @@ hold_diff['adapt_scen'] = 'hold the line'
 
 # Concatenate DataFrames
 combined_df = pd.concat([int_diff, hold_diff], ignore_index=True)
+# print combined_df with columns Total significant exposed people  Total building damage  difference_pop_prc  difference_damage_prc     adapt_scen, having index as clim_scen and adapt_scen
+print("main table of results: ",combined_df[['clim_scen','Total significant exposed people','Total building damage','difference_pop_prc','difference_damage_prc','adapt_scen']].set_index(['clim_scen','adapt_scen']))
 
 # Common settings for both plots
 tick_increment_population = 20  # Adjust based on your actual data
@@ -589,7 +605,7 @@ adapt_scens= ['hold the line', 'integrated']
 
 # Bar width and positions
 bar_width = 0.35
-clim_scen_positions = np.arange(len(clim_scens))
+clim_scen_positions = np.arange(len(climate_order))
 
 # FIGURE
 fig, axs = plt.subplots(1, 2, figsize=(doublecol*1.4, singlecol), dpi=150)
@@ -721,7 +737,11 @@ tiff_paths = [
     rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_3c_rain_surge_noadapt.tiff',
     rf'{hazard_folder_path}\hmax_idai_ifs_rebuild_bc_3c-hightide_rain_surge_noadapt.tiff'
 ]
-
+        # add a title where the tiff_path.split('_')[-4] is converted using scen_dict
+dict_letters = {'Baseline':"a)",
+                "Springtide":"b)",
+                "3C":"c)",
+                "3C-springtide":"d)"}
 landareas_path = rf'D:\paper_4\data\sfincs_input\data_deltares_idai\osm_landareas.gpkg'
 gdf_landareas = gpd.read_file(landareas_path)
 # change crs to match the tiff
@@ -747,13 +767,7 @@ for ax, tiff_path in zip(axes, tiff_paths):
 
         # Set the axis limits to the raster bounds
         ax.set_xlim([src.bounds.left+100, src.bounds.right-2000])
-        ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2000])
-        # add a title where the tiff_path.split('_')[-4] is converted using scen_dict
-        dict_letters = {'Baseline':"a)",
-                        "Springtide":"b)",
-                        "3C":"c)",
-                        "3C-springtide":"d)"}
-        
+        ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2000])        
         ax.set_title(f"{dict_letters[scen_dict[tiff_path.split('_')[-4]]]} {scen_dict[tiff_path.split('_')[-4]]}", fontsize=12, fontweight='medium', loc='left')
         
 # Adjust the position of the color bar to not overlap with the subplots
@@ -942,18 +956,62 @@ for ax in axes:
 plt.savefig(r'D:\paper_4\data\Figures\paper_figures\impact_vectors.png', dpi=300, bbox_inches='tight')
 plt.show()
 
+# Adjust the linspace boundaries for your specific range and number of intervals
+boundaries = np.linspace(0, 0.9*merged_gdfs[3]['Total Damage'].mean(), 11)  # Creates 10 intervals from 0 to 100
+norm = BoundaryNorm(boundaries, ncolors=256, clip=True)
+cmap = plt.get_cmap('Reds')  # Adjust 'Reds' to your preferred colormap
+
+# Create a figure with 2x2 subplots
+fig, axes = plt.subplots(2, 2, figsize=(doublecol*1.6, doublecol*1.4), sharex=True, sharey=True, dpi=300)
+axes = axes.flatten()  # Flatten the 2D array of axes to easily iterate over it
+# Loop through each GPKG path and plot it
+for ax, merged_gdf, gpkg_path in zip(axes, merged_gdfs, gpkg_paths):    # Load the current GeoPackage
+    # Set the axis limits to the raster bounds
+    ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
+    ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
+    gdf_to_plot.plot(ax=ax, color='lightgray')  # Adjust color as needed
+    merged_gdf.plot(ax=ax, column = 'Total Damage', cmap=cmap, norm=norm, markersize=1, zorder=2)  # Adjust color and edgecolor as needed #edgecolor='black'
+    gdf_exp_residential4.plot(ax=ax, facecolor='none', edgecolor = 'black', zorder=3, alpha=1, label = 'Informal setllements' )  # Adjust color, markersize, and alpha as needed
+    ax.set_title(f"{dict_letters[scen_dict[gpkg_path.split('_')[-4]]]} {scen_dict[gpkg_path.split('_')[-4]]}", fontsize=12, fontweight='medium', loc='left')
+# Adjust layout
+plt.subplots_adjust(wspace= 0.09, hspace=0.1)
+# Colorbar setup
+sm = ScalarMappable(norm=norm, cmap=cmap)
+cbar_ax = fig.add_axes([0.91, 0.15, 0.015, 0.7])  # Adjust these values as needed
+fig.colorbar(sm, cax=cbar_ax).set_label('Physical Damage (USD)', pad=-3)
+# add legend
+informal_settlements_legend = Patch(facecolor='none', edgecolor='black', label='Informal settlements')
+plt.legend(handles=[informal_settlements_legend], fontsize=10,frameon=False, bbox_to_anchor=(-1.40, -0.045))
+for ax in axes:
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+# save figure in D:\paper_4\data\Figures\paper_figures
+plt.savefig(r'D:\paper_4\data\Figures\paper_figures\impact_vectors_total.png', dpi=300, bbox_inches='tight')
+plt.show()
+
 ##########################################################################################
-# differences
+#2nd attempt: differences plot maps
 run_name = '3c-hightide'
-gpkg_path_no_adapt = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_noadapt.gpkg'
-gpkg_path_hold = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_hold.gpkg'
-gpkg_path_retreat = rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_retreat.gpkg'
 
-gdf_no_adapt = gpd.read_file(gpkg_path_no_adapt)
-gdf_hold = gpd.read_file(gpkg_path_hold)
-gdf_retreat = gpd.read_file(gpkg_path_retreat)
+diff_paths = [
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_noadapt.gpkg',
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_hold.gpkg',
+    rf'{fiat_output_path}\spatial_idai_ifs_rebuild_bc_{run_name}_rain_surge_retreat.gpkg'
+]
 
-unique_ids = pd.Series(pd.concat([gdf_no_adapt['Object ID'], gdf_hold['Object ID'], gdf_retreat['Object ID']]).unique(), name='Object ID')
+# Pre-load and merge GPKG files with the exposure data
+merged_diff_gdfs = []
+for gpkg_path in diff_paths:
+    gdf = gpd.read_file(gpkg_path)
+    merged_gdf = process_gdf(gdf, merged_gdf_exp)
+    merged_diff_gdfs.append(merged_gdf)
+
+# remove rows with 0 total damage
+merged_diff_gdfs = [gdf[gdf['Total Damage'] > 0] for gdf in merged_diff_gdfs]
+gdf_no_adapt = merged_diff_gdfs[0]
+gdf_hold = merged_diff_gdfs[1]
+gdf_retreat = merged_diff_gdfs[2]
 
 # Combine 'Object ID' from all GeoDataFrames to find the unique set
 all_ids = pd.Series(pd.concat([gdf_no_adapt['Object ID'], gdf_hold['Object ID'], gdf_retreat['Object ID']]).unique(), name='Object ID')
@@ -965,19 +1023,18 @@ for gdf in [gdf_no_adapt, gdf_hold, gdf_retreat]:
         master_geometry_dict[object_id] = geometry
 
 # Align GDFs
-gdf_no_adapt_aligned = align_gdf(gdf_no_adapt, all_ids, master_geometry_dict)
-gdf_hold_aligned = align_gdf(gdf_hold, all_ids, master_geometry_dict)
-gdf_retreat_aligned = align_gdf(gdf_retreat, all_ids, master_geometry_dict)
+gdf_no_adapt_aligned = align_gdf(gdf_no_adapt, all_ids, master_geometry_dict, "damage prc")
+gdf_hold_aligned = align_gdf(gdf_hold, all_ids, master_geometry_dict, "damage prc")
+gdf_retreat_aligned = align_gdf(gdf_retreat, all_ids, master_geometry_dict, "damage prc")
 
 diff_gdf_1 = gdf_no_adapt_aligned.copy()
-diff_gdf_1['Total Damage'] = (gdf_hold_aligned['Total Damage'] / gdf_no_adapt_aligned['Total Damage'])*100 - 100
-# drop the 0 values in total damage
+diff_gdf_1['damage prc'] = gdf_hold_aligned['damage prc'] - gdf_no_adapt_aligned['damage prc']
 
 diff_gdf_2 = gdf_no_adapt_aligned.copy()
-diff_gdf_2['Total Damage'] = (gdf_retreat_aligned['Total Damage'] / gdf_no_adapt_aligned['Total Damage'])*100 - 100
+diff_gdf_2['damage prc'] = gdf_retreat_aligned['damage prc'] - gdf_no_adapt_aligned['damage prc']
 
 diff_gdf_3 = gdf_hold_aligned.copy()
-diff_gdf_3['Total Damage'] = (gdf_retreat_aligned['Total Damage'] / gdf_hold_aligned['Total Damage'])*100 - 100
+diff_gdf_3['damage prc'] = gdf_retreat_aligned['damage prc'] - gdf_hold_aligned['damage prc']
 
 
 # Determine global min and max for consistent color scaling across subplots
@@ -985,45 +1042,44 @@ vmin = -100
 vmax = 100
 # Define the original colormap
 original_cmap = plt.cm.BrBG_r
-# Create a custom colormap with white at the center (value 100)
-colors = original_cmap(np.linspace(0, 1, 256))
-min_white = np.abs(np.linspace(vmin, vmax, 256) - 5).argmin()  # Find index for 99
-max_white = np.abs(np.linspace(vmin, vmax, 256) + 5).argmin()  # Find index for 101
-colors[min_white:max_white + 1] = [1, 1, 1, 1]  # Set colors in this range to white
-custom_cmap = LinearSegmentedColormap.from_list('CustomBrBG_r', colors)
-
-boundaries = np.linspace(vmin, vmax, 21)  # Creates 10 intervals between 0 and 200
+boundaries = np.linspace(vmin, vmax, 11)  # Creates 10 intervals between 0 and 200
 # Create a normalization based on these boundaries
 norm = BoundaryNorm(boundaries, ncolors=256, clip=True)
 
 # Figure comparing the adaptations to the no adapatation scenario
-fig, axes = plt.subplots(1, 2, figsize=(14, 7), sharex=True, sharey=True)
+fig, axes = plt.subplots(1, 2, figsize=(doublecol*1.6, doublecol*1), sharex=True, sharey=True)
 # Base plotting for all points
-gdf_to_plot.plot(ax=axes[0], color='darkgray', zorder=1)  # Adjust color as needed
-gdf_to_plot.plot(ax=axes[1], color='darkgray', zorder=1)  # Adjust color as needed
+gdf_to_plot.plot(ax=axes[0], color='lightgray', zorder=1)  # Adjust color as needed
+gdf_to_plot.plot(ax=axes[1], color='lightgray', zorder=1)  # Adjust color as needed
 
-diff_gdf_1.plot(ax=axes[0], column='Total Damage', cmap=custom_cmap, norm=norm, 
-                markersize=1, linewidth=0.0, zorder=2)
-axes[0].set_title('Hold - No Adaptation')
-axes[0].axis('off')
+gdf_exp_residential4.plot(ax=axes[0], facecolor='none', edgecolor = 'black', zorder=3, alpha=1, label = 'Informal setllements' )  # Adjust color, markersize, and alpha as needed
+gdf_exp_residential4.plot(ax=axes[1], facecolor='none', edgecolor = 'black', zorder=3, alpha=1, label = 'Informal setllements' )  # Adjust color, markersize, and alpha as needed
 
-diff_gdf_2.plot(ax=axes[1], column='Total Damage', cmap=custom_cmap, norm=norm,
+diff_gdf_1.plot(ax=axes[0], column='damage prc', cmap=original_cmap, norm=norm, 
                 markersize=1, linewidth=0.0, zorder=2)
-axes[1].set_title('Integrated - No Adaptation')
-axes[1].axis('off')
+axes[0].set_title('a) Damage change for Hold the Line', fontsize=12, fontweight='medium', loc='left')
+
+diff_gdf_2.plot(ax=axes[1], column='damage prc', cmap=original_cmap, norm=norm,
+                markersize=1, linewidth=0.0, zorder=2)
+axes[1].set_title('b) Damage change for Integrated', fontsize=12, fontweight='medium', loc='left')
+# axes[1].axis('off')
 #remove horizontal space between subplots
-plt.subplots_adjust(wspace=0.1)
+plt.subplots_adjust(wspace=0.3)
 
 for ax in axes:
     # Set the axis limits to the raster bounds
-    ax.set_xlim([src.bounds.left+1000, src.bounds.right-3000])
+    ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
     ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
-
+    ax.set_xticks([])
+    ax.set_yticks([])
 # Create and position the color bar
 fig.subplots_adjust(right=0.85)
-cbar_ax = fig.add_axes([0.86, 0.15, 0.015, 0.7])
-sm = ScalarMappable(norm=norm, cmap=custom_cmap)
-fig.colorbar(sm, cax=cbar_ax, boundaries=boundaries[::2], ticks=boundaries[::2], orientation='vertical').set_label('Change in damage (%)')
+cbar_ax = fig.add_axes([0.454, 0.29, 0.015, 0.44])  # Adjust these values as needed
+sm = ScalarMappable(norm=norm, cmap=original_cmap)
+fig.colorbar(sm, cax=cbar_ax, boundaries=boundaries[::2], ticks=boundaries[::2], orientation='vertical').set_label('Change in damage (%)', labelpad=-4)
+informal_settlements_legend = Patch(facecolor='none', edgecolor='black', label='Informal settlements')
+plt.legend(handles=[informal_settlements_legend], fontsize=10,frameon=False, bbox_to_anchor=(-1.0, 0.0))
+
 # save figure in D:\paper_4\data\Figures\paper_figures
 plt.savefig(r'D:\paper_4\data\Figures\paper_figures\adaptation_comparison.png', dpi=300, bbox_inches='tight')
 plt.show()
@@ -1068,8 +1124,8 @@ title.set_position([-0.1, 2])  # Adjust the first value to move left/right, seco
 title_2.set_position([-0.11, 2])  # Adjust the first value to move left/right, second value to move up/down
 axs[0].set_xticks(clim_scen_positions)
 axs[1].set_xticks(clim_scen_positions)
-axs[0].set_xticklabels(clim_scens)
-axs[1].set_xticklabels(clim_scens)
+axs[0].set_xticklabels(climate_order)
+axs[1].set_xticklabels(climate_order)
 # axs[1].set_xlabel('Hydrometeorological scenarios')
 # add some vertical space between the plots
 plt.subplots_adjust(wspace=0.3)
@@ -1109,29 +1165,218 @@ plt.savefig(r'D:\paper_4\data\Figures\paper_figures\combined_impact_bars_maps.pn
 plt.show()
 
 
+##########################################################################################
+# FIGURE FOR INFORMAL SETTLEMENTS
+##########################################################################################
+
+import glob
+# Specify the base directory where the search will start
+base_dir = r"D:\paper_4\data\FloodAdapt-GUI\Database\beira\output\Scenarios"
+
+# Create a pattern to match all the relevant CSV files
+pattern = os.path.join(base_dir, '**', 'Impacts_detailed_idai_ifs_*.csv')
+
+# Use glob to find all files matching the pattern
+csv_files = glob.glob(pattern, recursive=True)
+
+# Initialize an empty list to store DataFrames
+df_list = []
+
+# Loop through the found CSV files and process each one
+for file in csv_files:
+    # Extract the scenario name from the filename
+    scenario = os.path.splitext(os.path.basename(file))[0].replace('Impacts_detailed_idai_ifs_rebuild_bc_', '')
+    
+    # Load the CSV file into a DataFrame
+    df = pd.read_csv(file)
+    
+    # Add a new column for the scenario
+    df['climate_scen'] = scenario
+    
+    # Append the DataFrame to the list
+    df_list.append(df)
+
+combined_df_damages = pd.concat(df_list, ignore_index=True)
+
+# subset the data to only include the 'Residential4' type
+combined_df_residential4 = combined_df_damages[combined_df_damages['Primary Object Type'] == 'Residential4']
+combined_df_residential4 = combined_df_residential4[combined_df_residential4['Total Damage'] > 0]
+
+informal_impact_per_scenario = combined_df_residential4.groupby('climate_scen').agg(
+    total_damage=pd.NamedAgg(column='Total Damage', aggfunc='sum'),
+    total_population=pd.NamedAgg(column='population', aggfunc='sum')).reset_index()
+
+# Split 'climate_scen' into 'climate_scen' and 'adapt_scen'
+informal_impact_per_scenario['adapt_scen'] = informal_impact_per_scenario['climate_scen'].apply(lambda x: x.split('_', -1)[-1])
+informal_impact_per_scenario['climate_scen'] = informal_impact_per_scenario['climate_scen'].apply(lambda x: x.split('_', 1)[0])
+informal_impact_per_scenario = informal_impact_per_scenario[['climate_scen', 'adapt_scen', 'total_damage', 'total_population']]
 
 
+# Extract 'noadapt' data
+noadapt_df = informal_impact_per_scenario[informal_impact_per_scenario['adapt_scen'] == 'noadapt'].set_index('climate_scen')
+
+# Merge with the original DataFrame to calculate differences
+merged_df = informal_impact_per_scenario.merge(noadapt_df, on='climate_scen', suffixes=('', '_noadapt'))
+
+# Calculate percentage differences
+merged_df['difference_damage_prc'] = 100 * (merged_df['total_damage'] - merged_df['total_damage_noadapt']) / merged_df['total_damage_noadapt']
+merged_df['difference_pop_prc'] = 100 * (merged_df['total_population'] - merged_df['total_population_noadapt']) / merged_df['total_population_noadapt']
+
+# Drop unnecessary columns
+informal_impact_per_scenario_diff = merged_df[['climate_scen', 'adapt_scen', 'total_damage','total_population', 'difference_damage_prc', 'difference_pop_prc']]
+informal_impact_per_scenario_diff = informal_impact_per_scenario_diff.reset_index(drop=True)
+
+informal_impact_diff = informal_impact_per_scenario_diff[['climate_scen', 'adapt_scen', 'difference_damage_prc', 'difference_pop_prc']]
+# drop rows where adapt_scen == noadapt
+informal_impact_diff = informal_impact_diff[informal_impact_diff['adapt_scen'] != 'noadapt']
+# now  convert adapt_scen using adapt_dict
+informal_impact_diff['adapt_scen'] = informal_impact_diff['adapt_scen'].map(adapt_dict)
+# convert climate_scen using scen_dict
+informal_impact_diff['climate_scen'] = informal_impact_diff['climate_scen'].map(scen_dict)
+
+
+# Prepare the figure and axes climate_order
+fig, axs = plt.subplots(1, 2, figsize=(doublecol*1.6, singlecol*1.1), dpi=300, sharex=True, sharey=False)
+adapt_scens2 = ['Hold the line', 'Integrated']
+# Define y-ticks for population and damage plots
+# Common settings for both plots
+tick_increment_population = 20  # Adjust based on your actual data
+tick_increment_damage = 20  # Adjust based on your actual data
+# Define y-ticks for population and damage plots
+y_max_population = -80
+yticks_population = np.arange(y_max_population, 0.01, tick_increment_population)
+y_max_damage = -80
+yticks_damage = np.arange(y_max_damage, 0.01, tick_increment_damage)
+# Plot the data
+for ax, metric, ylabel, yticks in zip(axs, ['difference_pop_prc', 'difference_damage_prc'], ['Reduction (%)', ''], [yticks_population, yticks_damage]):
+    for i, adapt_scen in enumerate(adapt_scens2):
+        # Filter and sort DataFrame for the current adaptation scenario
+        adapt_scen_df = informal_impact_diff[informal_impact_diff['adapt_scen'] == adapt_scen]
+        adapt_scen_df = adapt_scen_df.set_index('climate_scen').reindex(climate_order).reset_index()
+        
+        # Calculate offsets for side-by-side bars
+        offsets = clim_scen_positions + (i - np.mean(range(len(adapt_scens)))) * bar_width
+        
+        # Plotting
+        ax.bar(offsets, adapt_scen_df[metric], width=bar_width, color=metric_colors[metric], label=adapt_scen, hatch=hatches[i], edgecolor='white', zorder=2)
+        
+        # Apply common styles
+        ax.yaxis.grid(True, zorder=0, linewidth=1.5, color='gray', alpha=0.7)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.set_yticks(yticks)
+        ax.set_ylabel(ylabel)
+
+    ax.set_xticks(clim_scen_positions)
+    ax.set_xticklabels(climate_order, rotation=45, ha='right')
+
+# Additional formatting
+axs[0].set_title('a) Exposed population in informal settlements', fontsize=12, fontweight='medium', loc='left', pad=20)
+axs[1].set_title('b) Damage in informal settlements', fontsize=12, fontweight='medium', loc='left', pad=20)
+# Adjust layout to prevent overlap
+plt.tight_layout()
+
+# Create a legend for hatching patterns
+handles, labels = axs[0].get_legend_handles_labels()
+# legend_handles = [mpatches.Patch(facecolor='white', edgecolor='black', hatch=hatch, label=label) for hatch, label in hatches.items()]
+# fig.legend(handles=legend_handles, frameon=False, bbox_to_anchor=(0.5, -0.05), ncol=2, loc='upper center', fontsize=10)
+
+# Creating custom legend handles for hatching, ignoring color
+legend_handles = [mpatches.Patch(facecolor='white', edgecolor='black', hatch=hatch, label=label)
+                  for hatch, label in zip(hatches, adapt_scens2)]
+fig.legend(handles=legend_handles, frameon=False, bbox_to_anchor=(0.84, 0.99), ncol=1, loc='upper left', fontsize=10)
+
+plt.savefig(r'D:\paper_4\data\Figures\paper_figures\informal_settlements_impact_bars.png', dpi=300, bbox_inches='tight')
+plt.show()
 # ##########################################################################################
-# # Comparison the two adaptation scenarios
-# fig, axes = plt.subplots(1, 1, figsize=(15, 15), sharex=True, sharey=True)
-# # Base plotting for all points
-# gdf_to_plot.plot(ax=axes, color='darkgray', zorder=1)  # Adjust color as needed
+# now plot map only for the validation part
+# import numpy.ma as ma
+# import rioxarray as rxr
+# # Load the raster file
+# src_hmdg = rxr.open_rasterio(r'D:\paper_4\data\mester_TC_Idai_data_collection\factual\2019063S18038_cf-zos_aviso-fes_no.tif') #D:\paper_4\data\floodadapt_results\hazard_tiff\hmax_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.tiff
+# src_hmdg_newcrs = src_hmdg.rio.reproject(src.crs)
+# src_hmdg_newcrs = src_hmdg_newcrs.where(src_hmdg_newcrs > 0.1)
+# src_hmdg_newcrs = src_hmdg_newcrs.isel(band=0)
+# # Specify the output file path
+# output_file = r'D:\paper_4\data\mester_TC_Idai_data_collection\factual\2019063S18038_cf-zos_aviso-fes_no_convert.tif'
+# # Save the reprojected raster to a new .tif file
+# src_hmdg_newcrs.rio.to_raster(output_file)
+# # Define colorbar boundaries
+# boundaries = np.linspace(0, 4, 11)  # 10 intervals from 0 to 3
+# norm = BoundaryNorm(boundaries, ncolors=256)
+# # make plot like the previous one
+# fig, ax = plt.subplots(1, 1, figsize=(doublecol*1.6, singlecol*1.1), dpi=300)
+# # Plot the raster
+# gdf_to_plot.plot(ax=ax, color='darkgray' )  # Adjust color as needed
+# src_hmdg_newcrs.plot.imshow(ax=ax, cmap='Blues', zorder=2, norm=norm, add_colorbar=False, add_labels=False)
 
-# diff_gdf_3.plot(ax=axes, column='Total Damage', cmap=custom_cmap, norm=norm, 
-#                 markersize=10, linewidth=0.0, zorder=2)
-# axes.set_title('Retreat - Hold')
-# axes.axis('off')
-
-# axes.set_xlim([src.bounds.left, src.bounds.right-2000])
-# axes.set_ylim([src.bounds.bottom+1200, src.bounds.top-2000])
-
-# # Create and position the color bar
-# fig.subplots_adjust(right=0.85)
-# cbar_ax = fig.add_axes([0.85, 0.15, 0.015, 0.7])
-# sm = ScalarMappable(norm=norm, cmap=custom_cmap)
-# fig.colorbar(sm, cax=cbar_ax, boundaries=boundaries[::2], ticks=boundaries[::2], orientation='vertical').set_label('Change in damage (%)')
-
+# ax.set_xlim([src.bounds.left+1000, src.bounds.right-2500])
+# ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-2500])
+# ax.set_title(f"Simulated flood", fontsize=12, fontweight='medium', loc='left')
+# # Adjust the position of the color bar to not overlap with the subplots
+# plt.subplots_adjust(wspace=0.091, hspace=0.05, right=0.95)
+# cbar_ax = fig.add_axes([0.96, 0.15, 0.015, 0.7])
+# # Create a common color bar for all subplots
+# cb = ColorbarBase(cbar_ax, cmap='Blues', norm=norm, boundaries=boundaries, ticks=boundaries, spacing='proportional', orientation='vertical')
+# cb.set_label('Inundation depth (m)')
+# for ax in axes.flatten():
+#     ax.set_xticks([])
+#     ax.set_yticks([])
 # plt.show()
+
+
+tiff_paths_2 = [r'D:\paper_4\data\floodadapt_results\hazard_tiff\hmax_idai_ifs_rebuild_bc_hist_rain_surge_noadapt.tiff', r'D:\paper_4\data\mester_TC_Idai_data_collection\factual\2019063S18038_cf-zos_aviso-fes_no_convert.tif']
+vector_paths = [
+    r'D:\paper_4\data\beira_vector\EMSR348_03BEIRA_DEL_MONIT01_v2_observed_event_a.shp',
+    r'D:\paper_4\data\beira_vector\v2\EMSR348_03BEIRA_DEL_MONIT02_v2_observed_event_a.shp']
+titles = ["a) Satellite imagery", "b) Baseline scenario", "c) Mester et al., 2023"]
+boundaries = np.linspace(0, 4, 11)  # 10 intervals from 0 to 3
+norm = BoundaryNorm(boundaries, ncolors=256)
+
+# Load the vector data
+gdf_list = [gpd.read_file(path) for path in vector_paths]
+
+# Merge the vector GeoDataFrames
+gdf_merged = gpd.GeoDataFrame(pd.concat(gdf_list, ignore_index=True), crs=gdf_list[0].crs)
+# Reproject the vector data to the same CRS as the raster
+gdf_vector = gdf_merged.to_crs(src.crs)
+
+# Create a figure with 3 subplots
+fig, axes = plt.subplots(1, 3, figsize=(doublecol*1.8, doublecol*1), sharex='col', sharey='row', dpi=300)
+axes = axes.flatten()  # Flatten the 2D array of axes to easily iterate over it
+# Load and plot the vector data on the first subplot
+ax = axes[0]
+gdf_to_plot.plot(ax=ax, color='darkgray')  # Plot background
+gdf_vector.plot(ax=ax, color='black', edgecolor='black')  # Plot vector data
+ax.set_title(titles[0], fontsize=12, fontweight='medium', loc='left')
+ax.set_xlim([src.bounds.left+1000, src.bounds.right-1500])
+ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-1000])
+# Loop through each TIFF path and plot it
+for ax, tiff_path, title in zip(axes[1:], tiff_paths_2, titles[1:]):
+    with rasterio.open(tiff_path) as src2:        
+        # Plot the GeoPackage data as basemap
+        gdf_to_plot.plot(ax=ax, color='darkgray')  # Adjust color as needed
+
+        # Plot the raster data
+        show(src2, ax=ax, cmap='Blues', norm=norm, zorder=2)
+        
+        ax.set_xlim([src.bounds.left+1000, src.bounds.right-1500])
+        ax.set_ylim([src.bounds.bottom+1300, src.bounds.top-1000])
+        ax.set_title(title, fontsize=12, fontweight='medium', loc='left')
+plt.subplots_adjust(wspace=0.091, hspace=0.05, right=0.95)
+cbar_ax = fig.add_axes([0.96, 0.3, 0.015, 0.4])
+# Create a common color bar for all subplots
+cb = ColorbarBase(cbar_ax, cmap='Blues', norm=norm, boundaries=boundaries, ticks=boundaries, spacing='proportional', orientation='vertical')
+cb.set_label('Inundation depth (m)')
+for ax in axes.flatten():
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+plt.savefig(r'D:\paper_4\data\Figures\paper_figures\inundation_validation.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+
 
 # plot for strategies
 gdf_elevate_port_2m = gpd.read_file(r'D:\paper_4\data\FloodAdapt-GUI\Database\beira\input\measures\elevate_port_2m\elevate_port_2m.geojson')

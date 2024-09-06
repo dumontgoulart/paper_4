@@ -714,7 +714,7 @@ if __name__ == "__main__":
 #^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     # #######
     # # 2) RUN OFFSHORE SFINCS MODEL 
-    run_sfincs(base_root = f'D:\paper_4\data\sfincs_input\quadtree_{sim_name}', fn_exe = fn_exe)
+    run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\quadtree_{sim_name}', fn_exe = fn_exe)
 
     # Run offshore sfincs model with max tide
     run_sfincs(base_root = rf'D:\paper_4\data\sfincs_input\quadtree_{sim_name}_hightide', fn_exe = fn_exe)
